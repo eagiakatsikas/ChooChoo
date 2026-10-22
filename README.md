@@ -62,6 +62,20 @@ Vercel can't hold the permanent connection to Network Rail, so the worker runs o
 
 Fly.io works too: `cd worker && fly launch` then `fly secrets set NR_USERNAME=… NR_PASSWORD=…`.
 
+### Free alternative: Oracle Cloud "Always Free" server
+
+1. Sign up at **https://signup.cloud.oracle.com** and pick **UK South (London)** as your home region (it can't be changed later). A card is needed for identity checks; Always Free resources aren't charged.
+2. In the console: **Compute → Instances → Create instance**.
+   - Image: **Canonical Ubuntu 24.04**. Shape: **VM.Standard.E2.1.Micro** (Always Free; the Ampere A1 shape also works if it has capacity).
+   - Networking: keep "Assign a public IPv4 address" on.
+   - SSH keys: **Save private key** and keep the file safe.
+   - **Show advanced options → Management → Paste cloud-init script**: paste the whole of `deploy/oracle-setup.sh`, with your Network Rail email and password filled in at the top.
+3. Open web traffic in Oracle's network firewall: on the instance page, open the **Subnet → Security** (or Security Lists) → **Add Ingress Rules**: source `0.0.0.0/0`, TCP, destination ports `80,443`.
+4. Wait about 10 minutes for setup to finish. The worker's address is `https://<your-ip-with-dashes>.sslip.io`, e.g. IP `132.145.10.20` → `https://132-145-10-20.sslip.io`. Check `https://…/api/status`.
+5. Put that address in Vercel as `VITE_WORKER_URL` and redeploy.
+
+To add or change your Network Rail login later: `ssh -i <your-key> ubuntu@<ip>`, then `sudo nano /etc/choochoo.env`, then `sudo systemctl restart choochoo`. To update the worker to the latest code, run `sudo bash /opt/choochoo/app/deploy/oracle-setup.sh` on the server (your settings are kept). Logs: `journalctl -u choochoo -f`.
+
 ## 4. Point the map at the worker
 
 In Vercel → Project → **Settings → Environment Variables**, add:
