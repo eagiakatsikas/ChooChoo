@@ -12,6 +12,8 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
+    "gtfs-realtime-bindings": "^1.1.1",
     "stompit": "^1.0.0",
     "web-push": "^3.6.7"
   }

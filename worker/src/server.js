@@ -10,6 +10,7 @@ import { ref } from './reference.js';
 import { busState, busesFor, busDetail, routeList, routeShapes, busTo } from './buses.js';
 import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
 import { record, frameAt, replayInfo } from './replay.js';
+import { euroViews, euroDetail, euroState } from './eurostar.js';
 import { disruptions } from './disruptions.js';
 import { watchPairs, historyFor, historyInfo } from './history.js';
 
@@ -22,6 +23,7 @@ function snapshot(now = Date.now()) {
     const v = view(t, now);
     if (v) out.set(v.id, v);
   }
+  for (const v of euroViews(now)) out.set(v.id, v); // Eurostars beyond the Channel Tunnel
   return out;
 }
 
@@ -112,6 +114,7 @@ export function startServer() {
         buses: busState,
         alerts: alertState,
         replay: replayInfo(),
+        eurostar: euroState,
         disruptions: { at: disruptions.at, count: disruptions.lines.length, error: disruptions.error },
         history: historyInfo(),
         stats,
@@ -202,7 +205,8 @@ export function startServer() {
       return res.end(JSON.stringify(getPaths(keys)));
     }
     if (url.pathname.startsWith('/api/train/')) {
-      const d = detail(decodeURIComponent(url.pathname.slice('/api/train/'.length)));
+      const id = decodeURIComponent(url.pathname.slice('/api/train/'.length));
+      const d = id.startsWith('es:') ? euroDetail(id) : detail(id);
       return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
     }
     if (url.pathname === '/api/stream') {

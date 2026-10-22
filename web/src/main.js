@@ -551,7 +551,7 @@ function renderDetailHeader() {
   dState.innerHTML = `${stateText(v)}<span class="pill" style="--c:${delayColour(v.dl)}">${dl}</span>${
     mph ? `<span class="speed" title="Average speed between these two stations">about ${mph} mph</span>` : ''
   }`;
-  const src = { TD: 'signalling', TRUST: 'train reporting', schedule: 'timetable', demo: 'simulated' }[v.src] || v.src;
+  const src = { TD: 'signalling', TRUST: 'train reporting', schedule: 'timetable', demo: 'simulated', eurostar: 'Eurostar’s live' }[v.src] || v.src;
   dFoot.classList.remove('tiny');
   dFoot.textContent = DEMO ? 'Demo data, not real trains' : `Last reported ${ago(v.up)} from ${src} data`;
 }

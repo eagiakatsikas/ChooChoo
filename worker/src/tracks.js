@@ -48,10 +48,12 @@ function metres(la1, lo1, la2, lo2) {
   return Math.hypot(x, y);
 }
 
+const within = (b, la, lo) => la >= b.s && la <= b.n && lo >= b.w && lo <= b.e;
 function inBox(la, lo) {
-  const b = config.trackBox;
-  return la >= b.s && la <= b.n && lo >= b.w && lo <= b.e;
+  return within(config.trackBox, la, lo) || config.euroBoxes.some((b) => within(b, la, lo));
 }
+/** A short description of the area covered, so a change of area means a fresh download. */
+const areaKey = () => [config.trackBox, ...config.euroBoxes].map((b) => `${b.s},${b.w},${b.n},${b.e}${b.hs ? 'h' : ''}`).join(';');
 
 /** Douglas–Peucker simplification of [[lat,lng],…] with a tolerance in metres. */
 export function simplify(pts, tol = 8) {
@@ -90,6 +92,11 @@ export function simplify(pts, tol = 8) {
 // ---------- loading ----------
 
 function overpassQuery(b) {
+  if (b.hs) {
+    return `[out:json][timeout:300];
+way["railway"="rail"]["highspeed"="yes"](${b.s},${b.w},${b.n},${b.e});
+out ids geom;`;
+  }
   // Main-line railways and crossovers; not sidings, yards or the Underground.
   return `[out:json][timeout:300];
 way["railway"~"^(rail|light_rail)$"]["service"!~"^(yard|siding|spur)$"](${b.s},${b.w},${b.n},${b.e});
@@ -97,10 +104,10 @@ out ids geom;`;
 }
 
 /** Split the area into tiles of about 0.5° × 0.75° so each Overpass request stays small. */
-function tiles(box) {
+function tiles(box, dLat = 0.5, dLng = 0.75) {
   const out = [];
-  const rows = Math.max(1, Math.ceil((box.n - box.s) / 0.5));
-  const cols = Math.max(1, Math.ceil((box.e - box.w) / 0.75));
+  const rows = Math.max(1, Math.ceil((box.n - box.s) / dLat));
+  const cols = Math.max(1, Math.ceil((box.e - box.w) / dLng));
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       out.push({
@@ -108,6 +115,7 @@ function tiles(box) {
         n: box.s + ((box.n - box.s) * (r + 1)) / rows,
         w: box.w + ((box.e - box.w) * c) / cols,
         e: box.w + ((box.e - box.w) * (c + 1)) / cols,
+        hs: box.hs,
       });
     }
   }
@@ -179,6 +187,7 @@ async function downloadRail(dest) {
   const seen = new Set();
   let ways = [];
   const list = tiles(box);
+  for (const b of config.euroBoxes) list.push(...(b.hs ? tiles(b, 1.2, 1.8) : tiles(b)));
   for (let i = 0; i < list.length; i++) {
     console.log(`[tracks] downloading railway lines, part ${i + 1} of ${list.length} …`);
     const json = await fetchTile(list[i]);
@@ -196,7 +205,7 @@ async function downloadRail(dest) {
   if (ways.length < 100) throw new Error(`only ${ways.length} railway lines returned`);
   const c = compactWays(ways);
   ways = null;
-  fs.writeFileSync(dest, JSON.stringify({ at: Date.now(), box, ways: c.ways }));
+  fs.writeFileSync(dest, JSON.stringify({ at: Date.now(), area: areaKey(), box, ways: c.ways }));
   console.log(`[tracks] saved ${c.ways.length} railway lines (${c.before} → ${c.after} points)`);
 }
 
@@ -281,9 +290,9 @@ export async function loadTracks() {
     if (fresh) {
       // A file for a different area (e.g. the area was changed) is downloaded again
       try {
-        const head = fs.readFileSync(file, 'utf8').slice(0, 300);
-        const m = head.match(/"box":(\{[^}]*\})/);
-        if (!m || JSON.stringify(JSON.parse(m[1])) !== JSON.stringify(config.trackBox)) fresh = false;
+        const head = fs.readFileSync(file, 'utf8').slice(0, 2000);
+        const m = head.match(/"area":"([^"]*)"/);
+        if (!m || m[1] !== areaKey()) fresh = false;
       } catch {
         fresh = false;
       }

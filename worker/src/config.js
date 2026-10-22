@@ -37,6 +37,22 @@ export const config = {
   // Default: the London commuter belt — Brighton to Milton Keynes/Cambridge, Basingstoke/Reading to
   // Southend/Ashford — plus High Speed 1 all the way to the Channel Tunnel (for Eurostar).
   trackBox: bbox(env.TRACK_BBOX || '50.78,-1.18,52.26,1.25'),
+  // Eurostar beyond the Channel Tunnel: the high-speed lines to Paris, Brussels and Amsterdam
+  // (hs: high-speed lines only), plus every line in a few small areas: the tunnel itself and
+  // the approaches to the big stations, where trains leave the high-speed line.
+  euroBoxes:
+    env.EURO_TRACKS === 'off'
+      ? []
+      : [
+          { s: 48.8, w: 1.5, n: 52.45, e: 5.2, hs: true },
+          { s: 50.9, w: 1.1, n: 51.12, e: 1.95 }, // Channel Tunnel, Folkestone to Calais-Fréthun
+          { s: 48.86, w: 2.33, n: 48.97, e: 2.5 }, // Paris Nord
+          { s: 50.6, w: 3.03, n: 50.66, e: 3.11 }, // Lille
+          { s: 50.76, w: 4.26, n: 50.87, e: 4.42 }, // Brussels Midi
+          { s: 50.84, w: 4.33, n: 51.25, e: 4.48 }, // Brussels to Antwerp
+          { s: 51.88, w: 4.4, n: 51.95, e: 4.52 }, // Rotterdam
+          { s: 52.28, w: 4.7, n: 52.4, e: 4.92 }, // Schiphol to Amsterdam
+        ],
   overpassUrls: (env.OVERPASS_URLS ||
     'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter').split(','),
 
@@ -48,6 +64,11 @@ export const config = {
   // TfL Unified API (Ding Ding buses). Free key from api-portal.tfl.gov.uk
   tflKey: env.TFL_APP_KEY || '',
   tflUrl: (env.TFL_URL || 'https://api.tfl.gov.uk').replace(/\/$/, ''),
+
+  // Eurostar's open data (France's national portal): timetable (GTFS) and live delays.
+  // Set EUROSTAR_GTFS_URL to empty to turn Eurostar-in-Europe off.
+  eurostarGtfsUrl: env.EUROSTAR_GTFS_URL ?? 'https://www.data.gouv.fr/api/1/datasets/r/bfd97acd-63f3-4ea4-bfe8-70e4c7fd8d13',
+  eurostarRtUrl: env.EUROSTAR_RT_URL || 'https://www.data.gouv.fr/api/1/datasets/r/9c3a3d5c-a52c-451e-89c8-32822af20bee',
 
   // Where downloaded reference files are cached
   dataDir: env.DATA_DIR || './data',

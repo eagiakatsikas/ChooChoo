@@ -1,0 +1,33 @@
+# Checks the Choo Choo server every 15 minutes. If it's down (or has lost its Network Rail
+# feed for a while), this run fails, and GitHub emails you about the failed run.
+name: Server check
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Is Choo Choo up?
+        env:
+          URL: https://143-47-236-90.sslip.io
+        run: |
+          # Three tries a couple of minutes apart, so a restart or a blip doesn't count
+          for i in 1 2 3; do
+            if s=$(curl -fsS --max-time 20 "$URL/api/status"); then
+              connected=$(echo "$s" | jq -r '.feed.connected')
+              mem=$(echo "$s" | jq -r '.memoryMB')
+              echo "feed connected: $connected · memory: ${mem} MB"
+              if [ "$connected" = "true" ]; then exit 0; fi
+              echo "Server is up but not connected to Network Rail (try $i of 3)"
+            else
+              echo "Server not answering (try $i of 3)"
+            fi
+            [ $i -lt 3 ] && sleep 120
+          done
+          echo "::error::Choo Choo is down or has lost its Network Rail feed: $URL/api/status"
+          exit 1
