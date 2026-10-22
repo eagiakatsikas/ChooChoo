@@ -14,6 +14,8 @@ const PATHS_FILE = 'rail-paths.json';
 const RAIL_MAX_AGE_H = 24 * 7;
 const SNAP_MAX_M = 400; // a station further than this from any track isn't snapped
 const CELL = 0.005; // spatial index cell size in degrees (~350–550 m)
+const MAX_EDGE_M = 100; // longest gap between track points in the graph
+const GRAPH_VERSION = 2; // bump when routing changes, so saved routes are recalculated
 
 export const tracks = {
   ready: false,
@@ -219,7 +221,16 @@ export function buildGraph(ways) {
   for (const w of ways) {
     let prev = id(w[0], w[1]);
     for (let k = 2; k < w.length; k += 2) {
-      const cur = id(w[k], w[k + 1]);
+      // Long straight stretches are stored as just their two ends; add points every
+      // ~100 m so every station has a track point close by to snap to.
+      const y0 = w[k - 2], x0 = w[k - 1], y1 = w[k], x1 = w[k + 1];
+      const pieces = Math.ceil(metres(y0, x0, y1, x1) / MAX_EDGE_M);
+      for (let j = 1; j < pieces; j++) {
+        const mid = id(y0 + ((y1 - y0) * j) / pieces, x0 + ((x1 - x0) * j) / pieces);
+        edges.push(prev, mid);
+        prev = mid;
+      }
+      const cur = id(y1, x1);
       if (cur !== prev) edges.push(prev, cur);
       prev = cur;
     }
@@ -287,7 +298,7 @@ export async function loadTracks() {
     }
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     buildGraph(data.ways);
-    tracks.version = String(data.at);
+    tracks.version = `${data.at}:${GRAPH_VERSION}`;
     loadPathCache();
     tracks.ready = true;
     tracks.error = null;

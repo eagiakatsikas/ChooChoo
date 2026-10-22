@@ -98,3 +98,18 @@ test('compacting track data keeps junctions so routes still connect', async () =
   const t = snap(51.48, -0.17);
   assert.ok(route(s, t), 'still routes from the main line onto the branch');
 });
+
+test('stations on long straight stretches still snap after compaction', async () => {
+  const { compactWays } = await import('../src/tracks.js');
+  // A dead-straight 10 km line, compacted to just its two ends
+  const line = [];
+  for (let i = 0; i <= 100; i++) line.push(51.5, -0.3 + i * 0.0014);
+  const c = compactWays([line]);
+  assert.equal(c.after, 2);
+  buildGraph(c.ways);
+  // A station half way along, 30 m off the line, finds a nearby track point
+  const i = snap(51.50027, -0.3 + 50 * 0.0014);
+  assert.ok(i >= 0, 'snapped');
+  const a = snap(51.5, -0.3);
+  assert.ok(route(a, i), 'routes along the line');
+});
