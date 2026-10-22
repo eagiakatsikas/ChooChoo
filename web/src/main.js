@@ -6,7 +6,9 @@ import { demoSnapshot, demoDetail } from './demo.js';
 
 // ---------- Data source ----------
 const params = new URLSearchParams(location.search);
-const WORKER = (params.get('worker') || import.meta.env.VITE_WORKER_URL || '').replace(/\/$/, '');
+// Live data comes from the Choo Choo worker on Oracle Cloud. Add ?demo to the address for simulated trains.
+const DEFAULT_WORKER = 'https://143-47-236-90.sslip.io';
+const WORKER = (params.get('worker') || import.meta.env.VITE_WORKER_URL || DEFAULT_WORKER).replace(/\/$/, '');
 const DEMO = !WORKER || params.has('demo');
 
 const trains = new Map(); // id → view from the worker
