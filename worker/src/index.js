@@ -2,7 +2,7 @@ import { config, hasCredentials } from './config.js';
 import { download } from './download.js';
 import { loadNaptan, loadSmart } from './reference.js';
 import { loadSchedule } from './schedule.js';
-import { startFeeds } from './feeds.js';
+import { startFeeds, feedState } from './feeds.js';
 import { startServer } from './server.js';
 import { londonParts } from './time.js';
 
@@ -42,11 +42,12 @@ function scheduleDailyReload() {
 }
 
 async function main() {
-  if (!hasCredentials()) {
-    console.error('Set NR_USERNAME and NR_PASSWORD (your Network Rail Open Data login). See README.');
-    process.exit(1);
-  }
   startServer(); // start answering health checks straight away
+  if (!hasCredentials()) {
+    feedState.lastError = 'Waiting for a Network Rail login: set NR_USERNAME and NR_PASSWORD (see README).';
+    console.error(feedState.lastError);
+    return;
+  }
   await loadReference();
   startFeeds();
   scheduleDailyReload();
