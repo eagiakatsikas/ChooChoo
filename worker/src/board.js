@@ -17,6 +17,9 @@ const cache = new Map(); // "FROM|TO" → { at, data }
 
 export const ldbState = { configured: false, lastOk: null, lastError: null };
 
+// Depots and sidings that have station codes but aren't somewhere you can catch a train
+const NOT_PASSENGER = /\b(C\.\s?S\.?|Sidings?|Depot|T\.?M\.?D\.?|Carriage)\b/i;
+
 let stationsJson = null;
 let stationsCount = -1;
 
@@ -24,6 +27,7 @@ let stationsCount = -1;
 export function stationList() {
   if (!stationsJson || stationsCount !== ref.stations.size) {
     const list = [...ref.stations.values()]
+      .filter((s) => !NOT_PASSENGER.test(s.name))
       .map((s) => ({ c: s.crs, n: s.name, la: Math.round(s.lat * 1e5) / 1e5, lo: Math.round(s.lng * 1e5) / 1e5 }))
       .sort((a, b) => a.n.localeCompare(b.n));
     stationsJson = JSON.stringify(list);
