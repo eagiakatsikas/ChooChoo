@@ -90,4 +90,4 @@ Handy overrides: `?demo` forces demo mode; `?worker=https://…` tries a differe
 - **Coverage:** TD covers almost all of London, but a few areas only report via TRUST, so trains there update less often.
 - **Tests:** `cd worker && npm test` runs the position logic against sample feed messages.
 - **Satellite view** uses Esri World Imagery, which is free for personal and non-commercial use with attribution (shown on the map). If you ever make this a commercial product, you'd need an Esri account or a different imagery provider.
-- Network Rail data © Network Rail Infrastructure Ltd, Open Government Licence. Map © OpenStreetMap contributors © CARTO. Imagery © Esri, Maxar, Earthstar Geographics.
+- Network Rail data © Network Rail Infrastructure Ltd, Open Government Licence. Street map © OpenStreetMap contributors (free tiles, fine for personal use; a busy public app should switch to a paid tile provider). Imagery and satellite labels © Esri, Maxar, Earthstar Geographics.

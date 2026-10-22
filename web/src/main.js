@@ -45,14 +45,13 @@ const map = L.map('map', {
 });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 // ---------- Basemaps: plain map or satellite imagery ----------
-const CARTO_ATTR =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+// Both providers are free without an API key for personal, non-commercial use.
 const BASEMAPS = {
   map: [
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
+    // Standard OpenStreetMap tiles
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: CARTO_ATTR,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }),
   ],
   satellite: [
@@ -63,12 +62,14 @@ const BASEMAPS = {
       attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
     }),
     // Place names on top of the imagery
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 19,
-      pane: 'shadowPane',
-      attribution: CARTO_ATTR,
-    }),
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 19,
+        maxNativeZoom: 18,
+        pane: 'shadowPane',
+      },
+    ),
   ],
 };
 
