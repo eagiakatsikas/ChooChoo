@@ -1521,6 +1521,7 @@ if (DEMO) replayBtn.hidden = true;
 // worker, worked out from TfL's arrival predictions, and glide between updates.
 const BUS_RED = '#d4302a';
 const BUS_POLL_MS = 5000;
+const busFactsCache = new Map(); // registration → { deck, model, power, … } from TfL's fleet list
 let busRoutes = null; // [{ id, n, e: [from, to] }]
 let busMeta = { ready: false, configured: true, pending: 0 };
 let busShapes = L.layerGroup().addTo(map);
@@ -1639,6 +1640,15 @@ function drawBus(o, pt, z, isSelected) {
   roundRect(pt.x - w / 2, pt.y - h / 2, w, h, big ? 4 : 2.5);
   ctx.fillStyle = BUS_RED;
   ctx.fill();
+  // Double deckers: a dark band along the top, like the upper deck's windows
+  if (big && o.v.k === 'D') {
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = 'rgba(20, 10, 10, 0.55)';
+    ctx.fillRect(pt.x - w / 2, pt.y - h / 2, w, 4);
+    ctx.restore();
+    roundRect(pt.x - w / 2, pt.y - h / 2, w, h, 4);
+  }
   ctx.lineWidth = isSelected ? 3 : fav ? 2 : 1.4;
   ctx.strokeStyle = isSelected ? '#efeadb' : fav ? '#d4a64a' : '#1f3229';
   ctx.stroke();
@@ -1669,12 +1679,21 @@ function renderBusHeader() {
   }
   const v = o.v;
   dHead.textContent = v.n;
-  dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>London bus`;
+  const facts = busFactsCache.get(v.id);
+  const deckName = facts?.deck || (v.k === 'D' ? 'Double decker' : v.k === 'S' ? 'Single decker' : 'London bus');
+  dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>${esc(deckName)}`;
   dRoute.textContent = v.d ? `To ${v.d}` : `Route ${v.n}`;
   const r = busRoutes && busRoutes.find((x) => x.id === v.r);
   const mine = ridesOn(v.id);
   dFrom.innerHTML = `${esc(r ? `Route ${v.n} · ${r.e[0]} – ${r.e[1]}` : `Route ${v.n}`)} · <span class="reg">${esc(v.id)}</span>${
     mine.length ? `<span class="been">You’ve been on this bus ${mine.length === 1 ? 'once' : `${mine.length} times`}</span>` : ''
+  }${
+    facts
+      ? `<span class="facts">${[facts.model, facts.power, facts.length ? `${facts.length} m` : '', facts.fleetNo ? `${facts.operator} ${facts.fleetNo}` : facts.operator, facts.year ? `from ${facts.year}` : '']
+          .filter(Boolean)
+          .map(esc)
+          .join(' · ')}</span>`
+      : ''
   }`;
   const fav = busFavs.includes(v.r);
   const onNow = mine.length && Date.now() - mine[0].at < RIDE_SAME_MS;
@@ -1695,6 +1714,10 @@ async function loadBusCalls() {
     if (res.ok) d = await res.json();
   } catch {}
   if (!d || 'bus:' + d.id !== selectedId) return;
+  if (d.facts && !busFactsCache.has(d.id)) {
+    busFactsCache.set(d.id, d.facts);
+    renderBusHeader();
+  }
   const nextIdx = d.stops.findIndex((s) => !s.done);
   dCalls.innerHTML = d.stops
     .map(
@@ -1852,7 +1875,8 @@ function logRide(v) {
     // Tapped again on the same ride: undo it
     rides = rides.filter((x) => x !== last);
   } else {
-    rides = [{ reg: v.id, route: v.r, name: v.n, dest: v.d, at: Date.now() }, ...rides].slice(0, 1000);
+    const f = busFactsCache.get(v.id);
+    rides = [{ reg: v.id, route: v.r, name: v.n, dest: v.d, at: Date.now(), deck: f?.deck || null, model: f?.model || null }, ...rides].slice(0, 1000);
   }
   saveRides();
 }
@@ -1866,7 +1890,7 @@ function renderMyBuses() {
   }
   const byReg = new Map();
   for (const x of rides) {
-    const b = byReg.get(x.reg) || { reg: x.reg, n: 0, routes: new Map(), last: x.at };
+    const b = byReg.get(x.reg) || { reg: x.reg, n: 0, routes: new Map(), last: x.at, model: x.model, deck: x.deck };
     b.n++;
     b.routes.set(x.name, (b.routes.get(x.name) || 0) + 1);
     byReg.set(x.reg, b);
@@ -1885,7 +1909,7 @@ function renderMyBuses() {
       .map(
         (b) => `<li><span class="mb-n">${b.n}×</span><span class="reg">${esc(b.reg)}</span><span class="bp-ends">${[...b.routes]
           .map(([r, n]) => `${esc(r)}${n > 1 ? ` ×${n}` : ''}`)
-          .join(', ')} · last ${day(b.last)}</span></li>`,
+          .join(', ')} · last ${day(b.last)}${b.model ? `<small>${esc(b.model)}${b.deck ? ` · ${esc(b.deck.toLowerCase())}` : ''}</small>` : ''}</span></li>`,
       )
       .join('')}</ul>
     <details class="mb-recent"><summary>Recent rides</summary><ul class="bp-list">${rides

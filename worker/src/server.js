@@ -12,6 +12,7 @@ import { alertState, publicKey, addWatch, removeWatch, listWatches } from './ale
 import { record, frameAt, replayInfo } from './replay.js';
 import { euroViews, euroDetail, euroState } from './eurostar.js';
 import { getThere } from './getthere.js';
+import { fleetInfo } from './fleet.js';
 import { disruptions } from './disruptions.js';
 import { watchPairs, historyFor, historyInfo } from './history.js';
 
@@ -112,7 +113,7 @@ export function startServer() {
         memoryMB: Math.round(process.memoryUsage().rss / 1e6),
         nationalRail: { ...ldbState, configured: Boolean(config.ldbKey) },
         stations: ref.stations.size,
-        buses: busState,
+        buses: { ...busState, fleet: fleetInfo },
         alerts: alertState,
         replay: replayInfo(),
         eurostar: euroState,

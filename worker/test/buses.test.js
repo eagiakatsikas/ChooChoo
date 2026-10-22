@@ -77,3 +77,15 @@ test('bus to the station: routes from near you to near the station', async () =>
   // Station far from every stop: nothing
   assert.equal(busOptions(51.4203, -0.2198, { lat: 51.6, lng: -0.1 }).length, 0);
 });
+
+test('bus fleet: single or double deck and model, by registration', async () => {
+  const { deckOf, busFacts } = await import('../src/fleet.js');
+  assert.equal(deckOf('LJ09KRO'), 'D');
+  assert.equal(deckOf('lj09 kro'), 'D');
+  assert.equal(deckOf('NOTABUS'), null);
+  const f = busFacts('LJ09KRO');
+  assert.equal(f.deck, 'Double decker');
+  assert.equal(f.operator, 'Arriva');
+  assert.equal(f.fleetNo, 'DW201');
+  assert.equal(f.year, 2009);
+});

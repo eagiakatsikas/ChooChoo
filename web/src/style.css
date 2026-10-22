@@ -2005,3 +2005,16 @@ body.replaying .toggles {
 .b-row.missed {
   opacity: 0.5;
 }
+.d-from .facts {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--ivory-muted);
+}
+.mb-list .bp-ends small {
+  display: block;
+  color: var(--muted);
+}
+.mb-list .bp-ends {
+  white-space: normal;
+}

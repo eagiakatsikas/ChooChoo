@@ -12,6 +12,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { simplify } from './tracks.js';
 import { hhmm } from './time.js';
+import { deckOf, busFacts } from './fleet.js';
 
 const ROUTES_FILE = 'bus-routes.json';
 const ROUTES_VERSION = 1;
@@ -373,6 +374,7 @@ export function busView(v, now = Date.now()) {
     h: p.h,
     nx: p.next[1],
     m: Math.max(0, Math.round((p.eta - now) / 60000)),
+    k: deckOf(v.id) || undefined, // D double deck, S single deck
   };
 }
 
@@ -423,6 +425,7 @@ export function busDetail(id, now = Date.now()) {
     stops,
     path: d ? d.pts : [],
     up: v.seen,
+    facts: busFacts(v.id),
   };
 }
 
