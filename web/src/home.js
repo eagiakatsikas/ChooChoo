@@ -29,7 +29,7 @@ export function createHome(ctx) {
     navigator.geolocation.getCurrentPosition(
       (p) => {
         here = { la: p.coords.latitude, lo: p.coords.longitude, at: Date.now() };
-        render();
+        refresh(); // the direction may have changed, so fetch that board too
       },
       () => {},
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
@@ -48,7 +48,7 @@ export function createHome(ctx) {
     let why;
     if (here && Date.now() - here.at < 15 * 60000) {
       rev = metres(here.la, here.lo, b) < metres(here.la, here.lo, a);
-      why = 'from where you are';
+      why = 'of where you are';
     } else {
       const h = new Date().getHours();
       rev = h >= 12; // mornings as saved, afternoons and evenings the other way
@@ -79,6 +79,31 @@ export function createHome(ctx) {
   }
 
   const boards = new Map(); // "FROM|TO" → data
+  let busTo = null; // { crs, at, options }
+
+  async function fetchBusTo(st) {
+    if (!here) return;
+    try {
+      const res = await fetch(`${ctx.WORKER}/api/busto?la=${here.la.toFixed(5)}&lo=${here.lo.toFixed(5)}&crs=${st.c}`);
+      const d = await res.json();
+      if (d.options) busTo = { crs: st.c, at: Date.now(), options: d.options };
+    } catch {}
+  }
+
+  /** "Or get the bus": shown when the walk to the station is a long one. */
+  function busSection(st, walk) {
+    if (walk == null || walk < 12 || !busTo || busTo.crs !== st.c || !busTo.options.length) return '';
+    const rows = busTo.options
+      .slice(0, 2)
+      .map((o) => {
+        const due = o.due.length ? o.due.map((m) => (m <= 0 ? 'due' : `${m} min`)).join(', ') : 'no times yet';
+        return `<li><span class="bp-num">${esc(o.route)}</span><span><b>From ${esc(o.stop)}</b> (${o.walk} min walk) · ${due}<small>${o.ride} min ride to ${esc(o.off)}${
+          o.atStation != null ? ` · at the station in about ${o.atStation} min` : ''
+        }</small></span></li>`;
+      })
+      .join('');
+    return `<div class="h-bus"><h3 class="h-head">Or take the bus</h3><ul>${rows}</ul></div>`;
+  }
 
   async function fetchBoard(from, to) {
     try {
@@ -110,6 +135,21 @@ export function createHome(ctx) {
       <span><span class="b-dest">${esc(r.dest)}${r.best ? '<span class="b-tag">Best</span>' : ''}</span><span class="b-sub">${bits.join(' · ')}</span></span>
       ${plat}
     </button>`, leave, until };
+  }
+
+  /** "Leave in 6 min" for the best train, or for the first one you can still walk to. */
+  function leaveLine(rows, best, walk) {
+    if (walk == null) return '';
+    const spare = (r) => {
+      const u = minsUntil(r.etdTime || r.std);
+      return u == null ? null : u - walk - 2; // a couple of minutes to find the platform
+    };
+    const b = spare(best);
+    if (b != null && b >= 0) return `<p class="h-leave">${b === 0 ? 'Leave now' : `Leave in ${b} min`} to walk to this one</p>`;
+    const next = rows.find((r) => !r.cancelled && (spare(r) ?? -1) >= 0);
+    if (!next) return `<p class="h-leave">It’s a ${walk} min walk: too far for the next few trains</p>`;
+    const s2 = spare(next);
+    return `<p class="h-leave">Too late to walk to this one. ${s2 === 0 ? 'Leave now' : `Leave in ${s2} min`} for the ${esc(next.std)}</p>`;
   }
 
   function render() {
@@ -147,12 +187,12 @@ export function createHome(ctx) {
             <span class="h-in">${top.until != null ? (top.until <= 0 ? 'due now' : `in ${top.until} min`) : ''}</span></div>
           <div class="h-plat"><b>${esc(best.plat || '–')}</b><small>${best.plat ? (best.platLive ? 'Platform' : 'Planned platform') : 'Platform not yet known'}</small></div>
         </div>
-        ${top.leave ? `<p class="h-leave">${top.leave}</p>` : ''}
+        ${leaveLine(d.rows, best, walk)}
         <div class="board h-board">${rows.map((r) => trainRow(r, walk).html).join('')}</div>
         <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail.' : 'Timetabled platforms until the station announces them.'} Tap a train to see it on the map.</p>`;
       }
       html += `<div class="h-more"><button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full departures board</button><button class="h-link" type="button" data-board="${c.from.c}|">All trains from ${esc(ctx.short(c.from.n))}</button></div>`;
-      html += ctx.busNearby ? ctx.busNearby(c.from, walk) : '';
+      html += busSection(c.from, walk);
       html += '</section>';
     }
     // Other saved routes, one line each
@@ -179,6 +219,7 @@ export function createHome(ctx) {
     const c = commute();
     const jobs = [];
     if (c) jobs.push(fetchBoard(c.from.c, c.to.c));
+    if (c && (walkMins(c.from) ?? 0) >= 12) jobs.push(fetchBusTo(c.from));
     for (const f of ctx.favs().slice(1, 6)) jobs.push(fetchBoard(f.f, f.t));
     render();
     await Promise.all(jobs);

@@ -1514,3 +1514,36 @@ body:not([data-tab='map']) .toggles {
   color: var(--ivory);
   border-color: var(--ivory-ink);
 }
+
+/* Small print under a bus's stops */
+.d-foot.tiny {
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.75;
+}
+.h-bus {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+.h-bus ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.h-bus li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 13px;
+}
+.h-bus b {
+  color: var(--ivory);
+}
+.h-bus small {
+  display: block;
+  color: var(--muted);
+}

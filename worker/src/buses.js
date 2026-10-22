@@ -491,3 +491,83 @@ export async function startBuses() {
     }
   }, 2000);
 }
+
+// ---------- Bus to the station ----------
+
+const NEAR_YOU_M = 450; // bus stops within a short walk of you
+const NEAR_STATION_M = 350; // and getting off within a short walk of the station
+const WALK_MPS = 1.3;
+const stopCache = new Map(); // naptanId → { at, list }
+
+async function stopArrivals(id) {
+  const hit = stopCache.get(id);
+  if (hit && Date.now() - hit.at < 30000) return hit.list;
+  const list = await tfl(`/StopPoint/${encodeURIComponent(id)}/Arrivals`);
+  stopCache.set(id, { at: Date.now(), list: Array.isArray(list) ? list : [] });
+  if (stopCache.size > 200) stopCache.delete(stopCache.keys().next().value);
+  return stopCache.get(id).list;
+}
+
+/** Bus routes that run from near you to near a station, best few first, with live times. */
+export function busOptions(la, lo, st) {
+  const out = [];
+  for (const l of lines.values()) {
+    for (const [dirName, d] of Object.entries(l.dirs)) {
+      if (!d) continue;
+      let board = null;
+      for (let i = 0; i < d.stops.length; i++) {
+        const s = d.stops[i];
+        const toYou = metres([la, lo], [s[2], s[3]]);
+        if (toYou <= NEAR_YOU_M && (!board || toYou < board.m)) board = { i, m: toYou };
+        if (board && i > board.i) {
+          const toSt = metres([st.lat, st.lng], [s[2], s[3]]);
+          if (toSt <= NEAR_STATION_M) {
+            const ride = s[4] >= 0 && d.stops[board.i][4] >= 0 ? s[4] - d.stops[board.i][4] : metres([d.stops[board.i][2], d.stops[board.i][3]], [s[2], s[3]]) * 1.3;
+            out.push({ line: l.id, name: l.name, dir: dirName, stop: d.stops[board.i], walkTo: board.m, off: s, walkFrom: toSt, rideMins: Math.max(2, Math.round(ride / SPEED / 60)) });
+            break;
+          }
+        }
+      }
+    }
+  }
+  // One option per route: the one with the least walking
+  const best = new Map();
+  for (const o of out) {
+    const k = o.line;
+    if (!best.has(k) || best.get(k).walkTo + best.get(k).walkFrom > o.walkTo + o.walkFrom) best.set(k, o);
+  }
+  return [...best.values()].sort((a, b) => a.walkTo + a.rideMins * 60 * WALK_MPS - (b.walkTo + b.rideMins * 60 * WALK_MPS)).slice(0, 4);
+}
+
+export async function busTo(la, lo, st, now = Date.now()) {
+  if (!config.tflKey || !lines.size) return { options: [], ready: false };
+  const opts = busOptions(la, lo, st);
+  const out = [];
+  for (const o of opts.slice(0, 3)) {
+    let due = [];
+    try {
+      const list = await stopArrivals(o.stop[0]);
+      due = list
+        .filter((a) => a.lineId === o.line)
+        .map((a) => Math.round((Date.parse(a.expectedArrival) - now) / 60000))
+        .filter((m) => m >= 0)
+        .sort((a, b) => a - b)
+        .slice(0, 3);
+    } catch {}
+    const walk = Math.round((o.walkTo * 1.3) / WALK_MPS / 60);
+    const catchable = due.find((m) => m >= walk);
+    out.push({
+      route: o.name,
+      id: o.line,
+      stop: o.stop[1],
+      walk,
+      due,
+      ride: o.rideMins,
+      off: o.off[1],
+      walkOff: Math.round((o.walkFrom * 1.3) / WALK_MPS / 60),
+      atStation: catchable != null ? catchable + o.rideMins + Math.round((o.walkFrom * 1.3) / WALK_MPS / 60) : null,
+    });
+  }
+  out.sort((a, b) => (a.atStation ?? 999) - (b.atStation ?? 999));
+  return { options: out, ready: true };
+}

@@ -7,7 +7,7 @@ import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
-import { busState, busesFor, busDetail, routeList, routeShapes } from './buses.js';
+import { busState, busesFor, busDetail, routeList, routeShapes, busTo } from './buses.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -108,6 +108,17 @@ export function startServer() {
     if (url.pathname.startsWith('/api/bus/')) {
       const d = busDetail(decodeURIComponent(url.pathname.slice('/api/bus/'.length)));
       return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
+    }
+    if (url.pathname === '/api/busto') {
+      // Buses from where you are to a station: ?la=&lo=&crs=
+      const st = ref.stations.get(String(url.searchParams.get('crs') || '').toUpperCase());
+      const la = Number(url.searchParams.get('la'));
+      const lo = Number(url.searchParams.get('lo'));
+      if (!st || !Number.isFinite(la) || !Number.isFinite(lo)) return json(res, 400, { error: 'Need la, lo and crs' });
+      busTo(la, lo, st)
+        .then((d) => json(res, 200, d))
+        .catch((err) => json(res, 500, { error: err.message }));
+      return;
     }
     if (url.pathname === '/api/busroutes') {
       cors(res);

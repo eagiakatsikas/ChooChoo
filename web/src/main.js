@@ -528,6 +528,7 @@ function renderDetailHeader() {
     mph ? `<span class="speed" title="Average speed between these two stations">about ${mph} mph</span>` : ''
   }`;
   const src = { TD: 'signalling', TRUST: 'train reporting', schedule: 'timetable', demo: 'simulated' }[v.src] || v.src;
+  dFoot.classList.remove('tiny');
   dFoot.textContent = DEMO ? 'Demo data, not real trains' : `Last reported ${ago(v.up)} from ${src} data`;
 }
 
@@ -1354,7 +1355,8 @@ function renderBusHeader() {
   const fav = busFavs.includes(v.r);
   dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? '★ Saved route' : '☆ Save route'}</button>`;
   document.getElementById('busStar').onclick = () => toggleBusFav(v.r);
-  dFoot.textContent = 'Position estimated from TfL arrival predictions. Powered by TfL Open Data.';
+  dFoot.textContent = 'Estimated position · TfL Open Data';
+  dFoot.classList.add('tiny');
 }
 
 async function loadBusCalls() {

@@ -64,3 +64,16 @@ test('the map gets favourite routes anywhere, and every bus in a zoomed-in view'
   ingestArrivals([], ['93'], now);
   assert.equal(vehicles.size, 0);
 });
+
+test('bus to the station: routes from near you to near the station', async () => {
+  const { busOptions } = await import('../src/buses.js');
+  // You're by Stop 0; the station is by Stop 3
+  const opts = busOptions(51.4203, -0.2198, { lat: 51.4202, lng: lon(3) + 0.0003 });
+  assert.equal(opts.length, 1);
+  assert.equal(opts[0].name, '93');
+  assert.equal(opts[0].stop[0], 'S0');
+  assert.equal(opts[0].off[0], 'S3');
+  assert.ok(opts[0].rideMins >= 5 && opts[0].rideMins <= 10, `ride ${opts[0].rideMins}`);
+  // Station far from every stop: nothing
+  assert.equal(busOptions(51.4203, -0.2198, { lat: 51.6, lng: -0.1 }).length, 0);
+});
