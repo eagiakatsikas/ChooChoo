@@ -36,11 +36,7 @@ Run locally: `cd web && npm install && npm run dev`
 ## 2. Get Network Rail data access (free)
 
 1. Register at **https://publicdatafeeds.networkrail.co.uk** (Network Rail Open Data). Approval can take a few days.
-2. Once active, go to **My Feeds** and subscribe to:
-   - **Train Movements** → all TOCs
-   - **TD** → all signalling areas
-   - **VSTP** → all
-   - **SCHEDULE** → daily full (all TOCs)
+2. There's nothing to subscribe to: the current portal gives every account access to all feeds (Movement, TD, VSTP, Schedule, SMART).
 3. Your login email and password are what the worker uses.
 
 If Network Rail has moved new sign-ups to the **Rail Data Marketplace** (raildata.org.uk) by the time you register, subscribe to the same feeds there; the worker's hosts and URLs are all overridable with environment variables (see `worker/src/config.js`).
