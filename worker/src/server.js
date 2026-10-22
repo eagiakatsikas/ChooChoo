@@ -76,7 +76,7 @@ export function startServer() {
         tracks: { ...tracks, queued: queueLength() },
         memoryMB: Math.round(process.memoryUsage().rss / 1e6),
         nationalRail: { ...ldbState, configured: Boolean(config.ldbKey) },
-        stations: { count: ref.stations.size, missing: ["WAT","CLJ","LBG","VIC","RAY","WIM"].filter((c) => !ref.stations.has(c)) },
+        stations: { count: ref.stations.size, missing: ["WAT","CLJ","LBG","VIC","RAY","WIM"].filter((c) => !ref.stations.has(c)), tiplocs: Object.fromEntries(["WAT","RAY","CLJ"].map((c) => [c, [...(ref.stations.get(c)?.tiplocs || [])]])) },
         stats,
         clients: clients.size,
       });

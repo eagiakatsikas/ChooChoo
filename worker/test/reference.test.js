@@ -17,6 +17,7 @@ test('a station NaPTAN lists under a TIPLOC without a CRS code is still a statio
   assert.ok(wat, 'Waterloo is a station');
   assert.equal(wat.name, 'London Waterloo');
   assert.ok(wat.tiplocs.has('WATRLMN'));
+  assert.ok(wat.tiplocs.has('WATRLOO'), 'sibling TIPLOC without a CRS joins via STANOX');
   assert.equal(ref.stations.get('WAE').name, 'London Waterloo East');
   assert.equal(ref.stations.get('VIC').name, 'London Victoria');
   assert.ok(ref.coords.has('VICTRIC'));

@@ -620,10 +620,11 @@ function search(q) {
     else if (bare.startsWith(q) || n.startsWith(q)) score = 1;
     else if (n.split(/[\s(-]+/).some((w) => w.startsWith(q))) score = 2;
     else if (n.includes(q)) score = 3;
-    if (score >= 0) out.push([score, n.length, s]);
+    if (score >= 0) out.push([score, n.startsWith('london ') ? 0 : 1, n.length, s]);
   }
-  out.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  return out.slice(0, 8).map((x) => x[2]);
+  // Best match first; among equals, London stations, then shorter names
+  out.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  return out.slice(0, 8).map((x) => x[3]);
 }
 
 function metresTo(la, lo, s) {
@@ -714,7 +715,7 @@ function showSuggest(input) {
   suggestItems = items;
   suggestIdx = items.length ? 0 : -1;
   if (!items.length) {
-    fSuggest.hidden = true;
+    hideSuggest();
     return;
   }
   const field = input.closest('.f-field');
@@ -727,11 +728,17 @@ function showSuggest(input) {
     .join('');
   fSuggest.hidden = false;
   input.setAttribute('aria-activedescendant', 'sug-0');
+  // Make the panel tall enough to show the whole list rather than cutting it off
+  const finderEl = document.getElementById('finder');
+  finderEl.style.minHeight = '';
+  const need = fSuggest.parentElement.offsetTop + fSuggest.offsetTop + fSuggest.offsetHeight + 16;
+  if (need > finderEl.clientHeight) finderEl.style.minHeight = `${need}px`;
 }
 
 function hideSuggest() {
   fSuggest.hidden = true;
   suggestFor = null;
+  document.getElementById('finder').style.minHeight = '';
 }
 
 function pickSuggestion(i) {

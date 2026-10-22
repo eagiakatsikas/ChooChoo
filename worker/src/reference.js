@@ -282,6 +282,19 @@ export function finaliseTiplocs() {
     ref.tiplocCrs.set(t._tiploc, t._crs);
     if (!ref.coords.has(t._tiploc)) ref.coords.set(t._tiploc, { lat: f[1], lng: f[2], name: f[0] });
   }
+  // TIPLOCs with no CRS code of their own that share a STANOX with a station are part of
+  // it (London Waterloo's code sits on one TIPLOC while its trains are timetabled at another).
+  const stanoxCrs = new Map();
+  for (const t of pendingTiplocs) {
+    if (t._crs && t._stanox && ref.stations.has(t._crs) && !stanoxCrs.has(t._stanox)) stanoxCrs.set(t._stanox, t._crs);
+  }
+  for (const t of pendingTiplocs) {
+    if (t._crs || !t._stanox) continue;
+    const crs = stanoxCrs.get(t._stanox);
+    if (!crs) continue;
+    ref.stations.get(crs).tiplocs.add(t._tiploc);
+    ref.tiplocCrs.set(t._tiploc, crs);
+  }
   pendingTiplocs.length = 0;
   console.log(`[ref] ${borrowed} extra TIPLOCs mapped via CRS/STANOX; ${ref.stations.size} stations`);
 }
