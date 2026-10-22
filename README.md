@@ -90,6 +90,22 @@ Tap **Find a train**: it picks your nearest station (or type one), you choose wh
 
 For live platforms and expected times, add a free National Rail key: register at https://raildata.org.uk, subscribe to the **Live Departure Board** product, copy its *Consumer key*, then on the server add `LDB_API_KEY=<key>` to `/etc/choochoo.env` and run `sudo systemctl restart choochoo`. Without a key the board uses the timetable and Choo Choo's own live data, with planned platforms.
 
+## Getting around the app
+
+The bar at the bottom has five tabs:
+
+- **Home:** your commute at a glance. Your first saved route, the right way round (from where you are, or by time of day; ⇄ swaps it), the next good train with its platform, when to leave to walk there (or which bus to take if it's a long walk), any disruption on the operators running it, and how reliable the route has been this week.
+- **Map:** the live map. Trains and Buses switches, Operators filter, tap a station for its departures, tap a train for its stops (Follow keeps it on screen), ⚠ disruption list, and the clock button to replay the last hour.
+- **Departures:** any station's departures board, optionally just the trains to one destination. Save routes here.
+- **Alerts:** trains you've asked to be told about. Tap 🔔 Alert me on Home or on a train: you get a notification when its platform is announced or changes, if it's late, and if it's cancelled. On iPhone, notifications only work once Choo Choo is added to the home screen (Share → Add to Home Screen).
+- **Ding Ding:** buses.
+
+Your saved routes and alerts are kept on your phone. The server records how your saved routes' trains arrive (30 days) for the reliability figures, and keeps the last hour of train positions for replay.
+
+**Eurostar** trains carry on beyond the Channel Tunnel to Paris, Brussels and Amsterdam using Eurostar's own open data (timetable plus live delays, from France's open data portal), placed between stations on the high-speed lines.
+
+**Server check:** a GitHub Actions job (`.github/workflows/uptime.yml`) checks the server every 15 minutes. If it's down, or has lost its Network Rail connection for a few minutes, the run fails and GitHub emails you. (GitHub pauses scheduled jobs in a repo after 60 days without any commits; re-enable it under Actions if that happens.)
+
 ## Ding Ding (buses)
 
 London buses, from TfL's open data. TfL doesn't publish bus GPS positions, so each bus is placed on its route between its last stop and the next, using its predicted arrival time and a speed worked out from its own predictions (so it slows down in traffic). Your saved routes show at any zoom; zoom in to see every bus in view.
@@ -108,6 +124,12 @@ Get a free key at https://api-portal.tfl.gov.uk (subscribe to the 500 requests a
 | `GET /api/buses?r=93,57&b=s,w,n,e` | Buses on those routes, plus every bus in the box |
 | `GET /api/bus/:id` | One bus: next stops and route line |
 | `GET /api/busroutes` | All bus routes (number and ends) |
+| `GET /api/board?from=WAT` | Every departure from a station (no destination) |
+| `GET /api/busto?la=&lo=&crs=` | Buses from where you are to a station |
+| `GET /api/disruptions` | Line status (National Rail operators and TfL rail lines) |
+| `GET /api/history?f=RAY&t=WAT` | How a saved route's trains have run |
+| `GET /api/replay?t=` | Train positions at a time in the last hour |
+| `POST /api/alerts` | Watch a train (Web Push subscription + train) |
 | `GET /api/status` | Feed connection, counts, message stats |
 
 ## Things to know
