@@ -103,6 +103,15 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 map.on('resize', resize);
+// Phones change the visible area as the address bar shows/hides or the screen rotates
+function refit() {
+  map.invalidateSize();
+  resize();
+}
+window.addEventListener('resize', refit);
+window.addEventListener('orientationchange', () => setTimeout(refit, 300));
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refit());
+setTimeout(refit, 500);
 map.on('zoomstart', () => canvas.classList.add('hide'));
 map.on('zoomend', () => canvas.classList.remove('hide'));
 resize();
@@ -461,3 +470,5 @@ function connect() {
 
 // Re-render "x seconds ago" text
 setInterval(() => selectedId && renderDetailHeader(), 5000);
+
+window.chooStarted = true;

@@ -74,6 +74,23 @@
       <p class="d-foot" id="dFoot"></p>
     </section>
 
+    <script>
+      // Show start-up errors on screen (helps diagnose problems on phones)
+      function chooShowError(msg) {
+        var el = document.getElementById('bootError');
+        if (!el) {
+          el = document.createElement('p');
+          el.id = 'bootError';
+          el.className = 'boot-error';
+          document.body.appendChild(el);
+        }
+        el.textContent = 'Choo Choo could not start: ' + msg + ' (' + navigator.userAgent + ')';
+      }
+      window.addEventListener('error', function (e) { chooShowError(e.message || 'script error'); });
+      window.addEventListener('unhandledrejection', function (e) { chooShowError(String(e.reason)); });
+      // If the app script never runs at all (e.g. the browser is too old for it)
+      setTimeout(function () { if (!window.chooStarted) chooShowError('the app script did not run'); }, 6000);
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
