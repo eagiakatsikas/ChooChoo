@@ -7,6 +7,7 @@ import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
+import { busState, busesFor, busDetail, routeList, routeShapes } from './buses.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -77,6 +78,7 @@ export function startServer() {
         memoryMB: Math.round(process.memoryUsage().rss / 1e6),
         nationalRail: { ...ldbState, configured: Boolean(config.ldbKey) },
         stations: { count: ref.stations.size, missing: ["WAT","CLJ","LBG","VIC","RAY","WIM"].filter((c) => !ref.stations.has(c)), tiplocs: Object.fromEntries(["WAT","RAY","CLJ"].map((c) => [c, [...(ref.stations.get(c)?.tiplocs || [])]])) },
+        buses: busState,
         stats,
         clients: clients.size,
       });
@@ -95,6 +97,28 @@ export function startServer() {
         .then((d) => json(res, d.error ? 400 : 200, d))
         .catch((err) => json(res, 500, { error: err.message }));
       return;
+    }
+    if (url.pathname === '/api/buses') {
+      // ?r=57,93 (routes, anywhere) &b=south,west,north,east (every bus in a zoomed-in view)
+      const routes = (url.searchParams.get('r') || '').split(',').filter(Boolean).slice(0, 40);
+      const b = url.searchParams.get('b');
+      const box = b ? b.split(',').map(Number) : null;
+      return json(res, 200, busesFor({ routes, box: box && box.length === 4 ? box : null }));
+    }
+    if (url.pathname.startsWith('/api/bus/')) {
+      const d = busDetail(decodeURIComponent(url.pathname.slice('/api/bus/'.length)));
+      return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
+    }
+    if (url.pathname === '/api/busroutes') {
+      cors(res);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(JSON.stringify(routeList()));
+    }
+    if (url.pathname === '/api/busshapes') {
+      const ids = (url.searchParams.get('r') || '').split(',').filter(Boolean);
+      cors(res);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(JSON.stringify(routeShapes(ids)));
     }
     if (url.pathname === '/api/paths') {
       // Track routes for the map: ?k=KEY1,KEY2 (keys as sent in train views)

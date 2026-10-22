@@ -14,6 +14,20 @@ const WORKER = (params.get('worker') || import.meta.env.VITE_WORKER_URL || DEFAU
 const DEMO = !WORKER || params.has('demo');
 
 const trains = new Map(); // id → view from the worker
+// Ding Ding: buses. id → { v: view, fla, flo (where it was drawn when the update came), t0 }
+const buses = new Map();
+let busFavs = store0('busFavs', []); // TfL route ids, e.g. ['93', 'n93']
+let busesOn = store0('busesOn', true); // every bus when zoomed in (favourites always show)
+const BUS_ZOOM = 14;
+const isBus = (id) => typeof id === 'string' && id.startsWith('bus:');
+function store0(k, d) {
+  try {
+    const v = localStorage.getItem('lt.' + k);
+    return v == null ? d : JSON.parse(v);
+  } catch {
+    return d;
+  }
+}
 let skew = 0; // server clock − local clock
 const now = () => Date.now() + skew;
 
@@ -250,7 +264,9 @@ function draw() {
     }
     drawTrain(v, pt, p, r, labels, false);
   }
+  const selBus = drawBuses(t, size, z);
   if (selected) drawTrain(selected.v, selected.pt, selected.p, r + 2.5, true, true);
+  if (selBus) drawBus(selBus.o, selBus.pt, z, true);
   requestAnimationFrame(draw);
 }
 
@@ -335,6 +351,13 @@ function setStatus(state, text) {
   statusText.textContent = text;
 }
 
+let trainsShown = 0;
+function renderCount() {
+  const t = `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}`;
+  const nb = buses.size;
+  countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} on the map` : `${t} on the map`;
+}
+
 function updateCounts() {
   let shown = 0;
   const perOp = new Map();
@@ -344,7 +367,8 @@ function updateCounts() {
     perOp.set(k, (perOp.get(k) || 0) + 1);
     if (visible(v)) shown++;
   }
-  countEl.textContent = `${shown} ${shown === 1 ? 'train' : 'trains'} on the map`;
+  trainsShown = shown;
+  renderCount();
   renderOps(perOp);
 }
 
@@ -405,6 +429,7 @@ for (const b of document.querySelectorAll('[data-colour]')) {
 applyColourMode();
 
 function setFiltersOpen(open) {
+  if (open) setBusPanelOpen(false);
   filtersEl.classList.toggle('open', open);
   toggleBtn.setAttribute('aria-expanded', open);
 }
@@ -453,7 +478,23 @@ function ago(ms) {
   return `${Math.round(s / 60)} min ago`;
 }
 
+/**
+ * Average speed between the last station and the next (mph): the distance along the track
+ * over the time it's given to get there. Not a speedometer, but a fair sense of pace.
+ */
+function trainSpeed(v) {
+  if (v.st !== 'mv' || !v.seg) return null;
+  const [la0, ln0, la1, ln1, t0, t1] = v.seg;
+  const secs = (t1 - t0) / 1000;
+  if (secs < 60) return null;
+  const r = v.pk && routes.get(v.pk);
+  const deg = r && r.total > 0 ? r.total : Math.hypot((ln1 - ln0) * Math.cos((la0 * Math.PI) / 180), la1 - la0);
+  const mph = ((deg * 111195) / secs) * 2.23694;
+  return mph >= 5 && mph <= 140 ? Math.round(mph / 5) * 5 : null;
+}
+
 function renderDetailHeader() {
+  if (isBus(selectedId)) return renderBusHeader();
   const v = trains.get(selectedId);
   if (!v) return;
   dHead.textContent = v.hc;
@@ -461,12 +502,16 @@ function renderDetailHeader() {
   dRoute.textContent = `To ${v.d}`;
   dFrom.textContent = `${v.dep} from ${v.o}`;
   const dl = delayText(v.dl);
-  dState.innerHTML = `${stateText(v)}<span class="pill" style="--c:${delayColour(v.dl)}">${dl}</span>`;
+  const mph = trainSpeed(v);
+  dState.innerHTML = `${stateText(v)}<span class="pill" style="--c:${delayColour(v.dl)}">${dl}</span>${
+    mph ? `<span class="speed" title="Average speed between these two stations">about ${mph} mph</span>` : ''
+  }`;
   const src = { TD: 'signalling', TRUST: 'train reporting', schedule: 'timetable', demo: 'simulated' }[v.src] || v.src;
   dFoot.textContent = DEMO ? 'Demo data, not real trains' : `Last reported ${ago(v.up)} from ${src} data`;
 }
 
 async function loadCalls() {
+  if (isBus(selectedId)) return loadBusCalls();
   let d = null;
   if (DEMO) d = demoDetail(selectedId, now());
   else {
@@ -510,7 +555,10 @@ function select(id) {
   detailEl.hidden = false;
   if (!finderEl.hidden) setFinderOpen(false);
   dCalls.innerHTML = '';
-  if (window.matchMedia('(max-width: 899px)').matches) setFiltersOpen(false);
+  if (window.matchMedia('(max-width: 899px)').matches) {
+    setFiltersOpen(false);
+    setBusPanelOpen(false);
+  }
   renderDetailHeader();
   loadCalls();
   clearInterval(detailTimer);
@@ -529,7 +577,10 @@ function closeDetail() {
 }
 document.getElementById('detailClose').onclick = closeDetail;
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeDetail();
+  if (e.key === 'Escape') {
+    closeDetail();
+    setBusPanelOpen(false);
+  }
 });
 
 // ---------- Feeding data in ----------
@@ -541,7 +592,7 @@ function replaceAll(list) {
 
 function afterUpdate() {
   updateCounts();
-  if (selectedId) {
+  if (selectedId && !isBus(selectedId)) {
     if (trains.has(selectedId)) renderDetailHeader();
     else dState.textContent = 'No longer being tracked';
   }
@@ -996,5 +1047,303 @@ document.getElementById('finderClose').onclick = () => setFinderOpen(false);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !finderEl.hidden && fSuggest.hidden) setFinderOpen(false);
 });
+
+// ---------- Ding Ding: buses ----------
+// Favourite routes show at any zoom; zoomed in, every bus in view. Positions come from the
+// worker, worked out from TfL's arrival predictions, and glide between updates.
+const BUS_RED = '#d4302a';
+const BUS_POLL_MS = 5000;
+let busRoutes = null; // [{ id, n, e: [from, to] }]
+let busMeta = { ready: false, configured: true, pending: 0 };
+let busShapes = L.layerGroup().addTo(map);
+let busTimer = null;
+const busStatus = document.getElementById('busNote');
+
+map.attributionControl.addAttribution('Buses: Powered by TfL Open Data');
+
+function busPos(o, t) {
+  const f = Math.max(0, Math.min(1, (t - o.t0) / BUS_POLL_MS));
+  return { la: o.fla + (o.v.la - o.fla) * f, lo: o.flo + (o.v.lo - o.flo) * f };
+}
+
+function busQuery() {
+  const q = new URLSearchParams();
+  if (busFavs.length) q.set('r', busFavs.join(','));
+  if (busesOn && map.getZoom() >= BUS_ZOOM) {
+    const b = map.getBounds().pad(0.15);
+    q.set('b', [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => x.toFixed(4)).join(','));
+  }
+  return q;
+}
+
+async function pollBuses() {
+  clearTimeout(busTimer);
+  busTimer = setTimeout(pollBuses, BUS_POLL_MS);
+  if (DEMO || document.visibilityState === 'hidden') return;
+  const q = busQuery();
+  if (![...q.keys()].length) {
+    if (buses.size) {
+      buses.clear();
+      renderCount();
+    }
+    renderBusNote();
+    return;
+  }
+  let d;
+  try {
+    const res = await fetch(`${WORKER}/api/buses?${q}`);
+    if (!res.ok) return;
+    d = await res.json();
+  } catch {
+    return;
+  }
+  skew = d.now - Date.now();
+  busMeta = { ready: d.ready, configured: d.configured, pending: d.pending };
+  const t = now();
+  const seen = new Set();
+  for (const b of d.buses) {
+    seen.add(b.id);
+    const old = buses.get(b.id);
+    const cur = old ? busPos(old, t) : null;
+    // A big jump (new trip, or a correction) snaps rather than sliding across the map
+    const far = cur && Math.hypot(cur.la - b.la, (cur.lo - b.lo) * 0.62) > 0.01;
+    buses.set(b.id, { v: b, fla: cur && !far ? cur.la : b.la, flo: cur && !far ? cur.lo : b.lo, t0: t });
+  }
+  for (const id of buses.keys()) if (!seen.has(id)) buses.delete(id);
+  renderCount();
+  renderBusNote();
+  if (isBus(selectedId)) renderBusHeader();
+}
+let busMoveTimer = null;
+map.on('moveend', () => {
+  clearTimeout(busMoveTimer);
+  busMoveTimer = setTimeout(pollBuses, 250);
+});
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && pollBuses());
+
+function roundRect(x, y, w, h, rad) {
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
+}
+
+function drawBuses(t, size, z) {
+  if (!buses.size) return null;
+  let sel = null;
+  for (const [id, o] of buses) {
+    const p = busPos(o, t);
+    const pt = toScreen(p.la, p.lo);
+    if (pt.x < -30 || pt.y < -30 || pt.x > size.x + 30 || pt.y > size.y + 30) continue;
+    drawn.push([pt.x, pt.y, 'bus:' + id]);
+    if ('bus:' + id === selectedId) {
+      sel = { o, pt };
+      continue;
+    }
+    drawBus(o, pt, z, false);
+  }
+  return sel;
+}
+
+function drawBus(o, pt, z, isSelected) {
+  const fav = busFavs.includes(o.v.r);
+  const big = z >= BUS_ZOOM || isSelected;
+  ctx.font = '700 11px "Work Sans", system-ui, sans-serif';
+  const w = big ? Math.max(22, ctx.measureText(o.v.n).width + 10) : 10;
+  const h = big ? 17 : 8;
+  // Direction of travel: a small arrowhead on the side the bus is heading
+  if (o.v.h != null && big) {
+    const a = ((o.v.h - 90) * Math.PI) / 180; // degrees from north → screen angle
+    const ux = Math.cos(a), uy = Math.sin(a);
+    const reach = Math.abs(ux) * (w / 2) + Math.abs(uy) * (h / 2);
+    ctx.beginPath();
+    ctx.moveTo(pt.x + ux * (reach + 6), pt.y + uy * (reach + 6));
+    ctx.lineTo(pt.x + ux * reach - uy * 4, pt.y + uy * reach + ux * 4);
+    ctx.lineTo(pt.x + ux * reach + uy * 4, pt.y + uy * reach - ux * 4);
+    ctx.closePath();
+    ctx.fillStyle = BUS_RED;
+    ctx.fill();
+  }
+  roundRect(pt.x - w / 2, pt.y - h / 2, w, h, big ? 4 : 2.5);
+  ctx.fillStyle = BUS_RED;
+  ctx.fill();
+  ctx.lineWidth = isSelected ? 3 : fav ? 2 : 1.4;
+  ctx.strokeStyle = isSelected ? '#efeadb' : fav ? '#d4a64a' : '#1f3229';
+  ctx.stroke();
+  if (big) {
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(o.v.n, pt.x, pt.y + 4);
+    ctx.textAlign = 'start';
+  }
+}
+
+// ---------- Bus details ----------
+function renderBusHeader() {
+  const o = buses.get(selectedId.slice(4));
+  if (!o) {
+    dState.textContent = 'No longer being tracked';
+    return;
+  }
+  const v = o.v;
+  dHead.textContent = v.n;
+  dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>London bus`;
+  dRoute.textContent = v.d ? `To ${v.d}` : `Route ${v.n}`;
+  const r = busRoutes && busRoutes.find((x) => x.id === v.r);
+  dFrom.textContent = r ? `Route ${v.n} · ${r.e[0]} – ${r.e[1]}` : `Route ${v.n}`;
+  const fav = busFavs.includes(v.r);
+  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? '★ Saved route' : '☆ Save route'}</button>`;
+  document.getElementById('busStar').onclick = () => toggleBusFav(v.r);
+  dFoot.textContent = 'Position estimated from TfL arrival predictions. Powered by TfL Open Data.';
+}
+
+async function loadBusCalls() {
+  const id = selectedId.slice(4);
+  let d = null;
+  try {
+    const res = await fetch(`${WORKER}/api/bus/${encodeURIComponent(id)}`);
+    if (res.ok) d = await res.json();
+  } catch {}
+  if (!d || 'bus:' + d.id !== selectedId) return;
+  const nextIdx = d.stops.findIndex((s) => !s.done);
+  dCalls.innerHTML = d.stops
+    .map(
+      (s, i) =>
+        `<li class="${s.done ? 'done' : ''} ${i === nextIdx ? 'next' : ''}"><span class="t">${s.s || ''}</span><span class="n">${esc(s.n)}${
+          i === nextIdx ? '<span class="tag">Next</span>' : ''
+        }</span><span class="e">${s.done ? '' : `<span class="x">${s.m <= 0 ? 'due' : `${s.m} min`}</span>`}</span></li>`,
+    )
+    .reverse()
+    .join('');
+  const cur = dCalls.querySelector('li.next');
+  const curKey = cur ? cur.textContent.replace(/\d+ min|due/, '') : '';
+  const firstOpen = scrolledFor !== selectedId;
+  if (cur && (firstOpen || curKey !== anchoredStop || Date.now() - userScrolledAt > 8000)) {
+    autoScrollAt = Date.now();
+    cur.scrollIntoView({ block: 'center', behavior: firstOpen ? 'auto' : 'smooth' });
+  }
+  scrolledFor = selectedId;
+  anchoredStop = curKey;
+  if (routeLine) routeLine.remove();
+  routeLine = L.polyline(d.path, { color: BUS_RED, weight: 3, opacity: 0.8, dashArray: '2 7', interactive: false }).addTo(map);
+}
+
+// ---------- Favourite routes and the Ding Ding panel ----------
+const busPanel = document.getElementById('busPanel');
+const busToggle = document.getElementById('busToggle');
+const busSearch = document.getElementById('busSearch');
+const busResults = document.getElementById('busResults');
+const busFavList = document.getElementById('busFavList');
+const busAll = document.getElementById('busAll');
+
+function setBusPanelOpen(open) {
+  const panel = document.getElementById('busPanel');
+  if (!panel) return;
+  if (open) setFiltersOpen(false);
+  panel.classList.toggle('open', open);
+  document.getElementById('busToggle').setAttribute('aria-expanded', open);
+  if (open) {
+    loadBusRoutes().then(renderBusLists);
+    renderBusNote();
+  }
+}
+busToggle.onclick = () => setBusPanelOpen(!busPanel.classList.contains('open'));
+document.getElementById('busClose').onclick = () => setBusPanelOpen(false);
+
+async function loadBusRoutes() {
+  if (busRoutes && busRoutes.length) return busRoutes;
+  if (DEMO) return (busRoutes = []);
+  try {
+    const res = await fetch(`${WORKER}/api/busroutes`);
+    busRoutes = await res.json();
+  } catch {
+    busRoutes = null;
+  }
+  return busRoutes;
+}
+
+const routeName = (id) => busRoutes?.find((r) => r.id === id)?.n || id.toUpperCase();
+const routeEnds = (id) => {
+  const e = busRoutes?.find((r) => r.id === id)?.e;
+  return e ? `${esc(e[0])} – ${esc(e[1])}` : '';
+};
+
+function busRow(id) {
+  const fav = busFavs.includes(id);
+  const count = [...buses.values()].filter((o) => o.v.r === id).length;
+  return `<li><button class="bp-star" data-route="${esc(id)}" aria-pressed="${fav}" aria-label="${fav ? 'Remove' : 'Save'} route ${esc(routeName(id))}">${fav ? '★' : '☆'}</button>
+    <span class="bp-num">${esc(routeName(id))}</span><span class="bp-ends">${routeEnds(id)}</span>${fav && count ? `<span class="n">${count}</span>` : ''}</li>`;
+}
+
+function renderBusLists() {
+  const q = busSearch.value.trim().toLowerCase();
+  if (q && busRoutes) {
+    const hits = busRoutes
+      .filter((r) => r.n.toLowerCase().startsWith(q) || r.id === q)
+      .sort((a, b) => (a.n.toLowerCase() === q ? -1 : b.n.toLowerCase() === q ? 1 : 0) || a.n.length - b.n.length)
+      .slice(0, 12);
+    busResults.innerHTML = hits.length ? hits.map((r) => busRow(r.id)).join('') : '<li class="bp-empty">No route with that number</li>';
+  } else busResults.innerHTML = '';
+  busFavList.innerHTML = busFavs.length
+    ? busFavs.map(busRow).join('')
+    : '<li class="bp-empty">No saved routes yet. Search for a route number above, or tap a bus on the map and save its route.</li>';
+  document.getElementById('busSummary').textContent = busFavs.length ? busFavs.length : '';
+}
+busSearch.addEventListener('input', renderBusLists);
+for (const list of [busResults, busFavList]) {
+  list.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-route]');
+    if (b) toggleBusFav(b.dataset.route);
+  });
+}
+
+function toggleBusFav(id) {
+  busFavs = busFavs.includes(id) ? busFavs.filter((x) => x !== id) : [...busFavs, id];
+  store.set('busFavs', busFavs);
+  renderBusLists();
+  drawBusShapes();
+  if (isBus(selectedId)) renderBusHeader();
+  pollBuses();
+}
+
+busAll.checked = busesOn;
+busAll.addEventListener('change', () => {
+  busesOn = busAll.checked;
+  store.set('busesOn', busesOn);
+  pollBuses();
+});
+
+function renderBusNote() {
+  if (!busPanel.classList.contains('open')) return;
+  let t = '';
+  if (DEMO) t = 'Buses aren’t simulated in demo mode.';
+  else if (!busMeta.configured) t = 'Buses will appear once a TfL key is added to the server.';
+  else if (!busMeta.ready) t = 'Loading London’s bus routes. This takes a few minutes the first time.';
+  else if (busMeta.pending) t = 'Getting live positions…';
+  else if (busesOn && map.getZoom() < BUS_ZOOM) t = busFavs.length ? 'Showing your routes. Zoom in to see every bus.' : 'Zoom in to see every bus.';
+  busStatus.textContent = t;
+}
+map.on('zoomend', renderBusNote);
+
+// Favourite routes are drawn as faint lines so you can see where they go
+async function drawBusShapes() {
+  busShapes.clearLayers();
+  if (DEMO || !busFavs.length) return;
+  try {
+    const res = await fetch(`${WORKER}/api/busshapes?r=${busFavs.map(encodeURIComponent).join(',')}`);
+    const shapes = await res.json();
+    for (const dirs of Object.values(shapes)) {
+      for (const pts of dirs) L.polyline(pts, { color: BUS_RED, weight: 3, opacity: 0.28, interactive: false }).addTo(busShapes);
+    }
+  } catch {}
+}
+
+if (busFavs.length) loadBusRoutes().then(renderBusLists);
+else renderBusLists();
+drawBusShapes();
+pollBuses();
 
 window.chooStarted = true;

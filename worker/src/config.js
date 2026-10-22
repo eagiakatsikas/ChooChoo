@@ -44,6 +44,10 @@ export const config = {
   ldbKey: env.LDB_API_KEY || '',
   ldbUrl: (env.LDB_URL || 'https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120').replace(/\/$/, ''),
 
+  // TfL Unified API (Ding Ding buses). Free key from api-portal.tfl.gov.uk
+  tflKey: env.TFL_APP_KEY || '',
+  tflUrl: (env.TFL_URL || 'https://api.tfl.gov.uk').replace(/\/$/, ''),
+
   // Where downloaded reference files are cached
   dataDir: env.DATA_DIR || './data',
 

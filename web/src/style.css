@@ -232,11 +232,16 @@ button {
   color: var(--ink);
 }
 
-.filter-toggle {
+/* Operators and Ding Ding sit side by side, bottom left */
+.toggles {
   position: fixed;
   z-index: 999;
   left: 12px;
   bottom: calc(18px + var(--safe-b));
+  display: flex;
+  gap: 8px;
+}
+.filter-toggle {
   padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid var(--rule);
@@ -665,7 +670,7 @@ button {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .filter-toggle {
+  .toggles {
     bottom: calc(30px + var(--safe-b));
   }
   .basemap-switch {
@@ -1039,4 +1044,136 @@ body::before {
     border-bottom: 0;
     padding: 14px 14px calc(12px + var(--safe-b));
   }
+}
+
+/* ---------- Ding Ding (buses) ---------- */
+.bus-chip {
+  display: inline-block;
+  width: 12px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 2.5px;
+  background: #d4302a;
+  vertical-align: 0;
+}
+.bus-toggle #busSummary:not(:empty) {
+  margin-left: 6px;
+  color: var(--amber);
+}
+.bus-panel {
+  overflow-y: auto;
+}
+.bp-intro,
+.bp-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.bp-note:empty {
+  display: none;
+}
+.bp-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 14px;
+  cursor: pointer;
+}
+.bp-switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--amber);
+}
+.bus-panel input[type='search'] {
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 9px 12px;
+  background: var(--berth);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 16px;
+}
+.bp-head {
+  margin: 14px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bp-list li {
+  display: grid;
+  grid-template-columns: 34px auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #2c4539;
+}
+.bp-list li.bp-empty {
+  display: block;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--muted);
+  border: 0;
+}
+.bp-star {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.bp-star[aria-pressed='true'] {
+  color: var(--amber);
+}
+.bp-num {
+  min-width: 38px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #d4302a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+}
+.bp-ends {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bp-list .n {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+/* "Save route" on a bus's panel */
+.pill.star {
+  --c: #e4dcc4;
+  border: 1px solid #c9bf9f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pill.star[aria-pressed='true'] {
+  --c: #d4a64a;
+  border-color: #b8892f;
+}
+
+/* Train's average speed between stations, next to the delay */
+.speed {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ivory-muted);
 }

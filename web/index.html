@@ -38,9 +38,28 @@
       <button data-basemap="satellite" aria-pressed="false">Satellite</button>
     </div>
 
-    <button class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters">
-      Operators <span id="filterSummary"></span>
-    </button>
+    <div class="toggles">
+      <button class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters">
+        Operators <span id="filterSummary"></span>
+      </button>
+      <button class="filter-toggle bus-toggle" id="busToggle" aria-expanded="false" aria-controls="busPanel">
+        <span class="bus-chip" aria-hidden="true"></span>Ding Ding <span id="busSummary"></span>
+      </button>
+    </div>
+
+    <aside class="panel filters bus-panel" id="busPanel" aria-label="Buses">
+      <div class="panel-head">
+        <h2>Ding Ding</h2>
+        <button class="close" id="busClose" aria-label="Close buses">×</button>
+      </div>
+      <p class="bp-intro">London buses. Your saved routes show at any zoom; zoom in to see every bus around you.</p>
+      <label class="bp-switch"><input type="checkbox" id="busAll" /> Show every bus when zoomed in</label>
+      <input id="busSearch" type="search" placeholder="Find a route, e.g. 93" autocomplete="off" inputmode="search" />
+      <ul class="bp-list" id="busResults"></ul>
+      <h3 class="bp-head">Your routes</h3>
+      <ul class="bp-list" id="busFavList"></ul>
+      <p class="bp-note" id="busNote" role="status"></p>
+    </aside>
 
     <aside class="panel filters" id="filters" aria-label="Filters">
       <div class="panel-head">
