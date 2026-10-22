@@ -2161,3 +2161,12 @@ body.replaying .toggles {
   align-items: center;
   justify-content: center;
 }
+
+/* Links in disruption notices */
+.dz-list a,
+.h-dz a {
+  color: var(--amber);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+}

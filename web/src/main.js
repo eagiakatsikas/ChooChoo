@@ -1384,6 +1384,15 @@ else if (favs.length && !params.has('demo')) setTab('home');
 else markTab('map');
 
 // ---------- Disruption ----------
+/** Escape text, then turn web addresses in it (https://…, www.…, tfl.gov.uk/…) into links. */
+function linkify(text) {
+  return esc(text).replace(/\b((?:https?:\/\/|www\.)[^\s<]+|(?:[a-z0-9-]+\.)+(?:gov\.uk|co\.uk|org\.uk|com|uk)(?:\/[^\s<]*)?)/gi, (m) => {
+    const trail = /[.,;:)]+$/.exec(m)?.[0] || ''; // leave sentence punctuation outside the link
+    const u = m.slice(0, m.length - trail.length);
+    const href = /^https?:/i.test(u) ? u : `https://${u}`;
+    return `<a href="${href}" target="_blank" rel="noopener">${u}</a>${trail}`;
+  });
+}
 const disruptPill = document.getElementById('disruptPill');
 function disruptedOp(name) {
   const normOp = (n) => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -1417,7 +1426,7 @@ function renderDisruptions() {
   body.innerHTML = `<ul class="dz-list">${disrupt.lines
     .map(
       (l) => `<li class="${l.level <= 6 ? 'bad' : ''}"><b>${esc(l.name)}</b> <span class="dz-sev">${esc(l.severity)}</span><small>${esc(mode(l.mode))}</small>${
-        l.reason ? `<p>${esc(l.reason)}</p>` : ''
+        l.reason ? `<p>${linkify(l.reason)}</p>` : ''
       }</li>`,
     )
     .join('')}</ul><p class="b-foot">From TfL, which includes National Rail operators. Updated every couple of minutes.</p>`;
@@ -1438,7 +1447,7 @@ function disruptionNote(ops) {
   const uniq = [...new Map(hit.map((l) => [l.id, l])).values()];
   if (!uniq.length) return '';
   return `<div class="h-dz">${uniq
-    .map((l) => `<p><b>⚠ ${esc(l.name)}: ${esc(l.severity)}</b>${l.reason ? `<small>${esc(l.reason)}</small>` : ''}</p>`)
+    .map((l) => `<p><b>⚠ ${esc(l.name)}: ${esc(l.severity)}</b>${l.reason ? `<small>${linkify(l.reason)}</small>` : ''}</p>`)
     .join('')}</div>`;
 }
 
