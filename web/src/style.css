@@ -1213,12 +1213,27 @@ body::before {
 .tabbar button[aria-pressed='true'] {
   color: var(--amber);
 }
-.tabbar #busSummary:not(:empty) {
-  margin-left: 4px;
-  font-weight: 700;
+.tabbar button {
+  position: relative;
 }
-.tabbar #busSummary:not(:empty)::before {
-  content: '· ';
+/* Counts as small badges on the icons, so labels never get cut off */
+.tabbar b {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 4px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--amber);
+  color: #162720;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.tabbar b:empty {
+  display: none;
 }
 /* Map controls belong to the Map tab */
 body:not([data-tab='map']) .toggles {
@@ -1570,4 +1585,137 @@ body:not([data-tab='map']) .toggles {
   .tabbar {
     border-top: 1px solid var(--rule);
   }
+}
+
+@media (max-width: 899px) {
+  :root {
+    --gap: 0px;
+  }
+  .tabbar button {
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .tabbar span {
+    font-size: 11px;
+    letter-spacing: -0.01em;
+  }
+  /* When iOS leaves a strip below the page, the nav bar extends into it and sits at the
+     very bottom of the screen, clear of the home indicator */
+  .has-gap {
+    --nav-pad: 18px;
+  }
+  .tabbar {
+    bottom: calc(-1 * var(--gap));
+  }
+  :root,
+  .has-gap {
+    --nav-h: calc(54px + var(--nav-pad) - var(--gap));
+  }
+  .tabbar {
+    height: calc(54px + var(--nav-pad));
+  }
+}
+@media (min-width: 900px) {
+  .tabbar b {
+    position: static;
+    margin-left: 2px;
+  }
+}
+
+/* Trains / Buses on-off switches on the map */
+.filter-toggle.layer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.filter-toggle.layer[aria-pressed='false'] {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.filter-toggle.layer[aria-pressed='false'] .lk {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.lk {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+}
+.lk.train {
+  border-radius: 50%;
+  background: #a9d6cf;
+}
+.lk.bus {
+  height: 9px;
+  border-radius: 2.5px;
+  background: #d4302a;
+}
+@media (max-width: 899px) {
+  .toggles {
+    gap: 6px;
+  }
+  .toggles .filter-toggle {
+    padding: 9px 12px;
+    font-size: 14px;
+  }
+}
+
+/* Alerts */
+.al-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #24392f;
+  font-size: 14px;
+  color: var(--ivory);
+}
+.al-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.al-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #2c4539;
+}
+.al-go {
+  flex: 1;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: var(--ivory);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.al-rm {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.h-alert {
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  background: none;
+  color: var(--amber);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.h-alert[aria-pressed='true'] {
+  background: var(--amber);
+  color: #162720;
+}
+.d-follow[hidden] {
+  display: none;
 }

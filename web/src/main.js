@@ -6,6 +6,7 @@ import './style.css';
 import { OPERATORS, opName, opColour, delayColour } from './operators.js';
 import { demoSnapshot, demoDetail } from './demo.js';
 import { createHome } from './home.js';
+import { createAlerts } from './alerts.js';
 
 // ---------- Data source ----------
 const params = new URLSearchParams(location.search);
@@ -52,7 +53,10 @@ const hidden = new Set(store.get('hiddenOps', []));
 let colourMode = store.get('colourMode', 'delay');
 let query = '';
 let selectedId = null;
-let tab = 'map'; // bottom navigation: home, map, departures, buses
+let tab = 'map'; // bottom navigation: home, map, departures, alerts, buses
+let showTrains = store0('showTrains', true);
+let showBuses = store0('showBuses', true);
+const boardCrs = new Map(); // train id → the station you'd board at (when opened from a board)
 
 // ---------- Map ----------
 const map = L.map('map', {
@@ -254,7 +258,7 @@ function draw() {
   let selected = null;
 
   for (const v of trains.values()) {
-    if (!visible(v)) continue;
+    if (!showTrains || !visible(v)) continue;
     const p = position(v, t);
     if (!p) continue;
     const pt = toScreen(p.lat, p.lng);
@@ -375,7 +379,7 @@ function setStatus(state, text) {
 let trainsShown = 0;
 function renderCount() {
   const t = `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}`;
-  const nb = buses.size;
+  const nb = showBuses ? buses.size : 0;
   countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} on the map` : `${t} on the map`;
 }
 
@@ -388,6 +392,7 @@ function updateCounts() {
     perOp.set(k, (perOp.get(k) || 0) + 1);
     if (visible(v)) shown++;
   }
+  if (!showTrains) shown = 0;
   trainsShown = shown;
   renderCount();
   renderOps(perOp);
@@ -515,6 +520,13 @@ function trainSpeed(v) {
 }
 
 function renderDetailHeader() {
+  const ab = document.getElementById('dAlert');
+  ab.hidden = DEMO || isBus(selectedId);
+  if (!ab.hidden) {
+    const on = alerts && alerts.has(selectedId);
+    ab.setAttribute('aria-pressed', Boolean(on));
+    ab.textContent = on ? '🔔 Alert on' : '🔔 Alert me';
+  }
   if (isBus(selectedId)) return renderBusHeader();
   const v = trains.get(selectedId);
   if (!v) return;
@@ -1045,12 +1057,13 @@ fBoard.addEventListener('click', (e) => {
     setNote('That train isn’t on the map yet. It appears shortly before it’s due to leave.');
     return;
   }
-  showTrain(id);
+  showTrain(id, route.from);
 });
 
 /** Go to the map and show a train, e.g. from a departures board. */
-function showTrain(id) {
+function showTrain(id, crs = null) {
   const v = trains.get(id);
+  if (crs) boardCrs.set(id, crs);
   if (!v) return false;
   setTab('map');
   select(id);
@@ -1165,13 +1178,74 @@ function setBarHeight() {
 }
 setBarHeight();
 if (window.ResizeObserver) new ResizeObserver(setBarHeight).observe(barEl);
+// Home-screen app on iPhone: iOS can leave the page's bottom edge short of the screen's,
+// which left a strip under the nav bar. Measure it and let the nav bar reach the real bottom.
+// Tap the title five times to show the layout measurements (for checking on a phone)
+let debugTaps = 0;
+let debugTimer = null;
+document.querySelector('.bar h1').addEventListener('click', () => {
+  debugTaps++;
+  clearTimeout(debugTimer);
+  debugTimer = setTimeout(() => debugTaps < 5 && (debugTaps = 0), 2000);
+  if (debugTaps === 5) setBottomGap();
+});
+function setBottomGap() {
+  const standaloneApp = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const portrait = window.innerHeight > window.innerWidth;
+  let gap = 0;
+  if (standaloneApp && portrait) gap = Math.round(window.screen.height - window.innerHeight);
+  if (gap < 0 || gap > 160) gap = 0;
+  document.documentElement.style.setProperty('--gap', `${gap}px`);
+  document.documentElement.classList.toggle('has-gap', gap > 0);
+  // ?debug shows the measurements, to check the layout on a phone
+  if (params.has('debug') || debugTaps >= 5) {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;height:env(safe-area-inset-bottom,0px);width:1px;visibility:hidden';
+    document.body.appendChild(probe);
+    const safeB = Math.round(probe.getBoundingClientRect().height);
+    probe.remove();
+    countEl.textContent = `screen ${window.screen.height} · inner ${window.innerHeight} · vv ${Math.round(window.visualViewport?.height || 0)} · gap ${gap} · app ${standaloneApp} · safe ${safeB}`;
+  }
+}
+setBottomGap();
+window.addEventListener('resize', setBottomGap);
+window.addEventListener('orientationchange', () => setTimeout(setBottomGap, 300));
 window.addEventListener('resize', setBarHeight);
 function markTab(name) {
   tab = name;
   document.body.dataset.tab = name;
   for (const b of document.querySelectorAll('.tabbar [data-tab]')) b.setAttribute('aria-pressed', b.dataset.tab === name);
 }
+const alerts = createAlerts({
+  WORKER,
+  DEMO,
+  store,
+  esc,
+  setTab: (t) => setTab(t),
+  showTrain: (id) => showTrain(id),
+  onChange() {
+    const n = alerts ? alerts.list().length : 0;
+    document.getElementById('alertCount').textContent = n ? n : '';
+    if (selectedId) renderDetailHeader();
+    home.render();
+  },
+});
+document.getElementById('dAlert').onclick = () => {
+  if (!selectedId || isBus(selectedId)) return;
+  const own = alerts.list().find((a) => a.key === selectedId);
+  if (own) alerts.remove(own.id);
+  else alerts.watch(selectedId, boardCrs.get(selectedId) || null);
+};
+document.getElementById('alertsClose').onclick = () => setTab('map');
+function setAlertsOpen(open) {
+  if (alerts.isOpen() === open) return;
+  alerts.open(open);
+  if (open) markTab('alerts');
+  else if (tab === 'alerts') markTab('map');
+}
+
 const home = createHome({
+  alerts: () => alerts,
   WORKER,
   store,
   esc,
@@ -1185,6 +1259,14 @@ const home = createHome({
   openBoard,
   showTrain,
 });
+home.addSection(() => {
+  const list = alerts.list();
+  if (!list.length) return '';
+  return `<section class="h-card"><h3 class="h-head">Your alerts</h3><ul class="al-list">${list
+    .map((x) => `<li><button class="al-go" type="button" data-id="${esc(x.key)}">🔔 ${esc(x.label)}</button></li>`)
+    .join('')}</ul></section>`;
+});
+document.getElementById('alertCount').textContent = alerts.list().length || '';
 function setHomeOpen(open) {
   if (home.isOpen() === open) return;
   home.open(open);
@@ -1195,14 +1277,16 @@ document.getElementById('homeClose').onclick = () => setTab('map');
 
 function setTab(name, preset = null) {
   if (name !== 'home') setHomeOpen(false);
+  if (name !== 'alerts') setAlertsOpen(false);
   if (name !== 'departures' && !finderEl.hidden) setFinderOpen(false);
   if (name !== 'buses') setBusPanelOpen(false);
-  if (name === 'home' || name === 'buses') setFiltersOpen(false);
+  if (name === 'home' || name === 'buses' || name === 'alerts') setFiltersOpen(false);
   if (name !== 'map' && window.matchMedia('(max-width: 899px)').matches) closeDetail();
   markTab(name);
   if (name === 'home') setHomeOpen(true);
   if (name === 'departures') setFinderOpen(true, preset);
   if (name === 'buses') setBusPanelOpen(true);
+  if (name === 'alerts') setAlertsOpen(true);
 }
 for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
   b.addEventListener('click', () => {
@@ -1210,8 +1294,36 @@ for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
     setTab(b.dataset.tab);
   });
 }
+// Trains and buses on/off
+function applyLayers() {
+  for (const [id, on] of [['layerTrains', showTrains], ['layerBuses', showBuses]]) document.getElementById(id).setAttribute('aria-pressed', on);
+  store.set('showTrains', showTrains);
+  store.set('showBuses', showBuses);
+  updateCounts();
+  busShapes[showBuses ? 'addTo' : 'remove'](map);
+}
+document.getElementById('layerTrains').onclick = () => {
+  showTrains = !showTrains;
+  applyLayers();
+};
+document.getElementById('layerBuses').onclick = () => {
+  showBuses = !showBuses;
+  applyLayers();
+  pollBuses();
+};
+
+// A notification was tapped while the app was closed: show that train once it's on the map
+const wantTrain = params.get('train');
+if (wantTrain) {
+  const t0 = Date.now();
+  const iv = setInterval(() => {
+    if (showTrain(wantTrain) || Date.now() - t0 > 20000) clearInterval(iv);
+  }, 500);
+}
+
 // Open on Home when there's a commute to show, otherwise the map
-if (favs.length && !params.has('demo')) setTab('home');
+if (wantTrain) markTab('map');
+else if (favs.length && !params.has('demo')) setTab('home');
 else markTab('map');
 
 // ---------- Ding Ding: buses ----------
@@ -1247,7 +1359,7 @@ async function pollBuses() {
   busTimer = setTimeout(pollBuses, BUS_POLL_MS);
   if (DEMO || document.visibilityState === 'hidden') return;
   const q = busQuery();
-  if (![...q.keys()].length) {
+  if (!showBuses || ![...q.keys()].length) {
     if (buses.size) {
       buses.clear();
       renderCount();
@@ -1298,7 +1410,7 @@ function roundRect(x, y, w, h, rad) {
 }
 
 function drawBuses(t, size, z) {
-  if (!buses.size) return null;
+  if (!buses.size || !showBuses) return null;
   let sel = null;
   for (const [id, o] of buses) {
     const p = busPos(o, t);

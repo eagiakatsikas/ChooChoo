@@ -188,6 +188,7 @@ export function createHome(ctx) {
           <div class="h-plat"><b>${esc(best.plat || '–')}</b><small>${best.plat ? (best.platLive ? 'Platform' : 'Planned platform') : 'Platform not yet known'}</small></div>
         </div>
         ${leaveLine(d.rows, best, walk)}
+        ${best.id && ctx.alerts() ? `<button class="h-alert" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${ctx.alerts().has(best.id)}">${ctx.alerts().has(best.id) ? '🔔 Alert on for this train' : `🔔 Alert me about the ${esc(best.std)}`}</button>` : ''}
         <div class="board h-board">${rows.map((r) => trainRow(r, walk).html).join('')}</div>
         <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail.' : 'Timetabled platforms until the station announces them.'} Tap a train to see it on the map.</p>`;
       }
@@ -239,11 +240,18 @@ export function createHome(ctx) {
       return;
     }
     if (b.dataset.go) return ctx.setTab(b.dataset.go);
+    if (b.dataset.alert) {
+      const a = ctx.alerts();
+      const own = a.list().find((x) => x.key === b.dataset.alert);
+      if (own) a.remove(own.id);
+      else a.watch(b.dataset.alert, b.dataset.crs);
+      return;
+    }
     if (b.dataset.board) {
       const [from, to] = b.dataset.board.split('|');
       return ctx.openBoard(from, to || null);
     }
-    if (b.dataset.id && !ctx.showTrain(b.dataset.id)) {
+    if (b.dataset.id && !ctx.showTrain(b.dataset.id, b.closest('.h-card')?.querySelector('[data-crs]')?.dataset.crs)) {
       b.querySelector('.b-sub')?.insertAdjacentHTML('beforeend', ' · not on the map yet');
     }
   });

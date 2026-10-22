@@ -8,6 +8,7 @@ import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
 import { busState, busesFor, busDetail, routeList, routeShapes, busTo } from './buses.js';
+import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -56,12 +57,38 @@ function json(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
+/** A small JSON request body (alerts only). */
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > 20000) {
+        reject(new Error('Too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(data || '{}'));
+      } catch {
+        reject(new Error('Bad JSON'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 export function startServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     if (req.method === 'OPTIONS') {
       cors(res);
-      res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Max-Age': '86400' });
+      res.writeHead(204, {
+        'Access-Control-Allow-Methods': 'GET, POST',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
+      });
       return res.end();
     }
     if (url.pathname === '/' || url.pathname === '/health') {
@@ -79,6 +106,7 @@ export function startServer() {
         nationalRail: { ...ldbState, configured: Boolean(config.ldbKey) },
         stations: { count: ref.stations.size, missing: ["WAT","CLJ","LBG","VIC","RAY","WIM"].filter((c) => !ref.stations.has(c)), tiplocs: Object.fromEntries(["WAT","RAY","CLJ"].map((c) => [c, [...(ref.stations.get(c)?.tiplocs || [])]])) },
         buses: busState,
+        alerts: alertState,
         stats,
         clients: clients.size,
       });
@@ -108,6 +136,21 @@ export function startServer() {
     if (url.pathname.startsWith('/api/bus/')) {
       const d = busDetail(decodeURIComponent(url.pathname.slice('/api/bus/'.length)));
       return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
+    }
+    if (url.pathname === '/api/push/key') return json(res, 200, { key: publicKey() });
+    if (url.pathname.startsWith('/api/alerts') && req.method === 'POST') {
+      readJson(req)
+        .then((body) => {
+          if (url.pathname === '/api/alerts') {
+            const r = addWatch(body);
+            return json(res, r.error ? 400 : 200, r);
+          }
+          if (url.pathname === '/api/alerts/remove') return json(res, 200, removeWatch(body.id, body.endpoint));
+          if (url.pathname === '/api/alerts/list') return json(res, 200, listWatches(body.endpoint));
+          json(res, 404, { error: 'not found' });
+        })
+        .catch((err) => json(res, 400, { error: err.message }));
+      return;
     }
     if (url.pathname === '/api/busto') {
       // Buses from where you are to a station: ?la=&lo=&crs=
