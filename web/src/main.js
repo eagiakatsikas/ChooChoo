@@ -357,10 +357,13 @@ map.on('click', (e) => {
       bestD = d;
     }
   }
-  if (best) return select(best);
-  // No train or bus there: a station?
+  // A station's name, tapped directly, wins
+  for (const [, , crs, box] of drawnStations) {
+    if (box && x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) return openBoard(crs, null);
+  }
+  // A station's dot, if it's clearly closer than any train or bus
   let stn = null;
-  let stnD = 16;
+  let stnD = 18;
   for (const [px, py, crs] of drawnStations) {
     const d = Math.hypot(px - x, py - y);
     if (d < stnD) {
@@ -368,7 +371,8 @@ map.on('click', (e) => {
       stnD = d;
     }
   }
-  if (stn) return openBoard(stn, null);
+  if (stn && (!best || stnD < 6)) return openBoard(stn, null);
+  if (best) return select(best);
   if (selectedId) closeDetail();
 });
 
@@ -1135,7 +1139,8 @@ function drawStations(size, z) {
   for (const st of stations) {
     if (st.la < b.getSouth() || st.la > b.getNorth() || st.lo < b.getWest() || st.lo > b.getEast()) continue;
     const pt = toScreen(st.la, st.lo);
-    drawnStations.push([pt.x, pt.y, st.c]);
+    const entry = [pt.x, pt.y, st.c, null];
+    drawnStations.push(entry);
     // A white station tick with a dark ring, like a railway map
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, big ? 4.5 : 3.2, 0, Math.PI * 2);
@@ -1146,6 +1151,9 @@ function drawStations(size, z) {
     ctx.stroke();
     if (big) {
       const name = short(st.n);
+      // The name can be tapped too: remember the box it covers (with a little slack)
+      const w = ctx.measureText(name).width;
+      entry[3] = [pt.x + 3, pt.y - 20, pt.x + 11 + w, pt.y + 2];
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(22,39,32,0.85)';
       ctx.strokeText(name, pt.x + 7, pt.y - 6);
