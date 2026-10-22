@@ -81,3 +81,20 @@ test('simplify keeps corners and drops straight-line points', () => {
   ];
   assert.deepEqual(simplify(pts), [pts[0], pts[2], pts[3]]);
 });
+
+test('compacting track data keeps junctions so routes still connect', async () => {
+  const { compactWays } = await import('../src/tracks.js');
+  // A straight line of 50 points with a branch leaving from a middle point
+  const line = [];
+  for (let i = 0; i < 50; i++) line.push(51.5, -0.2 + i * 0.001);
+  const branch = [51.5, -0.2 + 20 * 0.001, 51.49, -0.18, 51.48, -0.17];
+  const c = compactWays([line, branch]);
+  assert.ok(c.after < c.before / 3, `fewer points (${c.before} → ${c.after})`);
+  const kept = c.ways[0];
+  const hasJunction = kept.some((v, k) => k % 2 === 1 && Math.abs(v - (-0.2 + 20 * 0.001)) < 1e-9);
+  assert.ok(hasJunction, 'junction point kept on the main line');
+  buildGraph(c.ways);
+  const s = snap(51.5, -0.2);
+  const t = snap(51.48, -0.17);
+  assert.ok(route(s, t), 'still routes from the main line onto the branch');
+});

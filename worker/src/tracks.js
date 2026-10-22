@@ -87,47 +87,115 @@ export function simplify(pts, tol = 8) {
 
 // ---------- loading ----------
 
-function overpassQuery() {
-  const b = config.trackBox;
+function overpassQuery(b) {
   // Main-line railways and crossovers; not sidings, yards or the Underground.
   return `[out:json][timeout:300];
 way["railway"~"^(rail|light_rail)$"]["service"!~"^(yard|siding|spur)$"](${b.s},${b.w},${b.n},${b.e});
 out ids geom;`;
 }
 
-async function downloadRail(dest) {
+/** Split the area into tiles of about 0.5° × 0.75° so each Overpass request stays small. */
+function tiles(box) {
+  const out = [];
+  const rows = Math.max(1, Math.ceil((box.n - box.s) / 0.5));
+  const cols = Math.max(1, Math.ceil((box.e - box.w) / 0.75));
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      out.push({
+        s: box.s + ((box.n - box.s) * r) / rows,
+        n: box.s + ((box.n - box.s) * (r + 1)) / rows,
+        w: box.w + ((box.e - box.w) * c) / cols,
+        e: box.w + ((box.e - box.w) * (c + 1)) / cols,
+      });
+    }
+  }
+  return out;
+}
+
+async function fetchTile(b) {
   let lastErr = null;
   for (const url of config.overpassUrls) {
-    try {
-      console.log(`[tracks] downloading railway lines from ${url} …`);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ChooChoo/1.0 (personal train map)' },
-        body: 'data=' + encodeURIComponent(overpassQuery()),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      // Keep it compact: each way as a flat [lat,lon,lat,lon,…] list (6 decimal places)
-      const ways = [];
-      for (const el of json.elements || []) {
-        if (el.type !== 'way' || !el.geometry) continue;
-        const flat = [];
-        for (const g of el.geometry) {
-          if (!g) continue;
-          flat.push(Math.round(g.lat * 1e6) / 1e6, Math.round(g.lon * 1e6) / 1e6);
-        }
-        if (flat.length >= 4) ways.push(flat);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ChooChoo/1.0 (personal train map)' },
+          body: 'data=' + encodeURIComponent(overpassQuery(b)),
+        });
+        if (res.status === 429 || res.status === 504) throw new Error(`HTTP ${res.status} (busy)`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        lastErr = err;
+        console.error(`[tracks] ${url} failed: ${err.message}`);
+        await new Promise((r) => setTimeout(r, 15000));
       }
-      if (ways.length < 100) throw new Error(`only ${ways.length} railway lines returned`);
-      fs.writeFileSync(dest, JSON.stringify({ at: Date.now(), box: config.trackBox, ways }));
-      console.log(`[tracks] saved ${ways.length} railway lines`);
-      return;
-    } catch (err) {
-      lastErr = err;
-      console.error(`[tracks] ${url} failed: ${err.message}`);
     }
   }
   throw lastErr || new Error('no Overpass server configured');
+}
+
+const keyOf = (y, x) => (Math.round(y * 1e6) - 40e6) * 1e8 + (Math.round(x * 1e6) + 50e6);
+
+/**
+ * Shrink the track data: drop points along straight-ish stretches, but never a point
+ * shared by two lines (junctions), so the network stays connected. Exported for tests.
+ */
+export function compactWays(ways, tol = 3) {
+  const uses = new Map();
+  for (const w of ways) {
+    for (let k = 0; k < w.length; k += 2) {
+      const key = keyOf(w[k], w[k + 1]);
+      uses.set(key, (uses.get(key) || 0) + 1);
+    }
+  }
+  const out = [];
+  let before = 0, after = 0;
+  for (const w of ways) {
+    const pts = [];
+    for (let k = 0; k < w.length; k += 2) pts.push([w[k], w[k + 1]]);
+    before += pts.length;
+    const kept = [];
+    let start = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const shared = (uses.get(keyOf(pts[i][0], pts[i][1])) || 0) > 1;
+      if (shared || i === pts.length - 1) {
+        const piece = simplify(pts.slice(start, i + 1), tol);
+        for (let j = kept.length ? 1 : 0; j < piece.length; j++) kept.push(piece[j]);
+        start = i;
+      }
+    }
+    if (kept.length < 2) continue;
+    after += kept.length;
+    out.push(kept.flat());
+  }
+  return { ways: out, before, after };
+}
+
+async function downloadRail(dest) {
+  const box = config.trackBox;
+  const seen = new Set();
+  let ways = [];
+  const list = tiles(box);
+  for (let i = 0; i < list.length; i++) {
+    console.log(`[tracks] downloading railway lines, part ${i + 1} of ${list.length} …`);
+    const json = await fetchTile(list[i]);
+    for (const el of json.elements || []) {
+      if (el.type !== 'way' || !el.geometry || seen.has(el.id)) continue;
+      seen.add(el.id);
+      const flat = [];
+      for (const g of el.geometry) {
+        if (!g) continue;
+        flat.push(Math.round(g.lat * 1e6) / 1e6, Math.round(g.lon * 1e6) / 1e6);
+      }
+      if (flat.length >= 4) ways.push(flat);
+    }
+  }
+  if (ways.length < 100) throw new Error(`only ${ways.length} railway lines returned`);
+  const c = compactWays(ways);
+  ways = null;
+  fs.writeFileSync(dest, JSON.stringify({ at: Date.now(), box, ways: c.ways }));
+  console.log(`[tracks] saved ${c.ways.length} railway lines (${c.before} → ${c.after} points)`);
 }
 
 /** Build the track graph from ways ([[lat,lon,lat,lon,…],…]). Exported for tests. */
@@ -138,7 +206,7 @@ export function buildGraph(ways) {
   const edges = []; // pairs a,b
   const id = (y, x) => {
     // numeric key (avoids millions of strings); exact for latitudes 40–60° and longitudes ±50°
-    const k = (Math.round(y * 1e6) - 40e6) * 1e8 + (Math.round(x * 1e6) + 50e6);
+    const k = keyOf(y, x);
     let i = index.get(k);
     if (i === undefined) {
       i = la.length;
@@ -198,7 +266,17 @@ export async function loadTracks() {
   try {
     fs.mkdirSync(config.dataDir, { recursive: true });
     const file = path.join(config.dataDir, RAIL_FILE);
-    const fresh = fs.existsSync(file) && (Date.now() - fs.statSync(file).mtimeMs) / 3600000 < RAIL_MAX_AGE_H;
+    let fresh = fs.existsSync(file) && (Date.now() - fs.statSync(file).mtimeMs) / 3600000 < RAIL_MAX_AGE_H;
+    if (fresh) {
+      // A file for a different area (e.g. the area was changed) is downloaded again
+      try {
+        const head = fs.readFileSync(file, 'utf8').slice(0, 300);
+        const m = head.match(/"box":(\{[^}]*\})/);
+        if (!m || JSON.stringify(JSON.parse(m[1])) !== JSON.stringify(config.trackBox)) fresh = false;
+      } catch {
+        fresh = false;
+      }
+    }
     if (!fresh) {
       try {
         await downloadRail(file);

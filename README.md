@@ -23,7 +23,7 @@ Network Rail feeds ──STOMP──▶ worker ──Server-Sent Events──▶
 - **Positions:** the Train Describer (TD) feed reports trains as they step between signal berths, usually within seconds. Network Rail's SMART data maps those steps to station arrivals and departures. TRUST movement reports fill gaps. Between stations, trains are moved along the line using their timetabled running time, adjusted for delay, and held just short of the next station until they're reported there.
 - **Station locations** come from NaPTAN (DfT open data).
 
-Within about 30 km of central London, trains follow the real track: the worker downloads the railway lines from OpenStreetMap (via the Overpass API) once a week and works out the route between each pair of stations. Further out they move in straight lines between stations.
+Across the London commuter belt (roughly Brighton to Milton Keynes and Cambridge, Reading/Basingstoke to Southend/Ashford), trains follow the real track: the worker downloads the railway lines from OpenStreetMap (via the Overpass API) once a week and works out the route between each pair of stations. Further out they move in straight lines between stations.
 
 ## 1. Deploy the map to Vercel (5 minutes)
 

@@ -72,6 +72,7 @@ export function startServer() {
         runsLoaded: sched.runs.size,
         scheduleLoadedAt: sched.loadedAt,
         tracks: { ...tracks, queued: queueLength() },
+        memoryMB: Math.round(process.memoryUsage().rss / 1e6),
         stats,
         clients: clients.size,
       });
