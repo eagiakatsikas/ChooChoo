@@ -1,0 +1,109 @@
+// HTTP API: snapshot, live stream (Server-Sent Events), train detail and status.
+import http from 'node:http';
+import { config } from './config.js';
+import { trains, view, detail, cleanup, stats } from './trains.js';
+import { sched } from './schedule.js';
+import { feedState } from './feeds.js';
+
+const clients = new Set();
+let lastViews = new Map(); // id → JSON string
+
+function snapshot(now = Date.now()) {
+  const out = new Map();
+  for (const t of trains.values()) {
+    const v = view(t, now);
+    if (v) out.set(v.id, v);
+  }
+  return out;
+}
+
+function send(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+/** Every push interval, send only what changed to every connected browser. */
+function tick() {
+  const now = Date.now();
+  cleanup(now);
+  const views = snapshot(now);
+  const upd = [];
+  const next = new Map();
+  for (const [id, v] of views) {
+    const s = JSON.stringify(v);
+    next.set(id, s);
+    if (lastViews.get(id) !== s) upd.push(v);
+  }
+  const del = [];
+  for (const id of lastViews.keys()) if (!next.has(id)) del.push(id);
+  lastViews = next;
+  if (!upd.length && !del.length) return;
+  for (const res of clients) send(res, 'delta', { now, upd, del });
+}
+
+function cors(res) {
+  res.setHeader('Access-Control-Allow-Origin', config.allowedOrigin);
+  res.setHeader('Vary', 'Origin');
+}
+
+function json(res, code, data) {
+  cors(res);
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(data));
+}
+
+export function startServer() {
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    if (req.method === 'OPTIONS') {
+      cors(res);
+      res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Max-Age': '86400' });
+      return res.end();
+    }
+    if (url.pathname === '/' || url.pathname === '/health') {
+      return json(res, 200, { ok: true });
+    }
+    if (url.pathname === '/api/status') {
+      return json(res, 200, {
+        feed: feedState,
+        trainsTracked: trains.size,
+        trainsShown: lastViews.size,
+        runsLoaded: sched.runs.size,
+        scheduleLoadedAt: sched.loadedAt,
+        stats,
+        clients: clients.size,
+      });
+    }
+    if (url.pathname === '/api/trains') {
+      const now = Date.now();
+      return json(res, 200, { now, trains: [...snapshot(now).values()] });
+    }
+    if (url.pathname.startsWith('/api/train/')) {
+      const d = detail(decodeURIComponent(url.pathname.slice('/api/train/'.length)));
+      return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
+    }
+    if (url.pathname === '/api/stream') {
+      cors(res);
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      res.write('retry: 3000\n\n');
+      const now = Date.now();
+      send(res, 'snapshot', { now, live: feedState.connected, trains: [...snapshot(now).values()] });
+      clients.add(res);
+      req.on('close', () => clients.delete(res));
+      return;
+    }
+    json(res, 404, { error: 'not found' });
+  });
+
+  setInterval(tick, config.pushInterval);
+  // Keep proxies from closing idle streams; also tells browsers whether the feed is up.
+  setInterval(() => {
+    for (const res of clients) send(res, 'ping', { now: Date.now(), live: feedState.connected });
+  }, 20000);
+
+  server.listen(config.port, () => console.log(`[server] listening on :${config.port}`));
+}

@@ -1,0 +1,17 @@
+{
+  "name": "choo-choo-worker",
+  "version": "1.0.0",
+  "description": "Always-on worker: consumes Network Rail TRUST + TD + VSTP feeds and streams live positions of London passenger trains.",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "stompit": "^1.0.0"
+  }
+}

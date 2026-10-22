@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1f3229" />
+    <title>Choo Choo</title>
+    <meta name="description" content="Live map of trains in and out of London" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="Choo Choo" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Work+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="map" aria-label="Map of trains around London"></div>
+
+    <header class="bar">
+      <h1>Choo Choo</h1>
+      <p class="status" id="status" data-state="connecting">
+        <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
+      </p>
+      <p class="count" id="count"></p>
+    </header>
+
+    <div class="basemap-switch" role="group" aria-label="Map style">
+      <button data-basemap="map" aria-pressed="true">Map</button>
+      <button data-basemap="satellite" aria-pressed="false">Satellite</button>
+    </div>
+
+    <button class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters">
+      Operators <span id="filterSummary"></span>
+    </button>
+
+    <aside class="panel filters" id="filters" aria-label="Filters">
+      <div class="panel-head">
+        <h2>Operators</h2>
+        <button class="close" id="filtersClose" aria-label="Close filters">×</button>
+      </div>
+      <input id="search" type="search" placeholder="Find a headcode or station" autocomplete="off" />
+      <div class="seg" role="group" aria-label="Colour trains by">
+        <button data-colour="delay" aria-pressed="true">Colour by delay</button>
+        <button data-colour="op" aria-pressed="false">Colour by operator</button>
+      </div>
+      <div class="bulk">
+        <button id="allOn">Show all</button>
+        <button id="allOff">Hide all</button>
+      </div>
+      <ul class="ops" id="ops"></ul>
+      <p class="legend" id="delayLegend" hidden>
+        <span style="--c: #a9d6cf">On time</span>
+        <span style="--c: #d4a64a">1–14 min late</span>
+        <span style="--c: #e07f63">15+ min late</span>
+      </p>
+    </aside>
+
+    <section class="panel detail" id="detail" hidden aria-live="polite">
+      <div class="panel-head">
+        <p class="d-op"><span id="dHeadcode"></span><span id="dOp"></span></p>
+        <button class="close" id="detailClose" aria-label="Close train details">×</button>
+      </div>
+      <h2 class="d-route" id="dRoute"></h2>
+      <p class="d-from" id="dFrom"></p>
+      <p class="d-state" id="dState"></p>
+      <ol class="calls" id="dCalls"></ol>
+      <p class="d-foot" id="dFoot"></p>
+    </section>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
