@@ -487,9 +487,17 @@ button {
 
 /* ---------- Phones: panels become bottom sheets ---------- */
 @media (max-width: 899px) {
+  /* Full-width bar from the very top of the screen, behind the clock and battery,
+     so no map shows (or gets blurred by the phone) above the header */
   .bar {
-    padding: 10px 16px 8px;
+    top: 0;
+    left: 0;
+    right: 0;
+    max-width: none;
+    padding: calc(var(--safe-t) + 8px) 16px 10px;
     gap: 2px 10px;
+    border-width: 0 0 1px;
+    border-radius: 0 0 22px 22px;
   }
   .bar h1 {
     font-size: 26px;
