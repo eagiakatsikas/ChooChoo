@@ -445,30 +445,89 @@ button {
   padding: 0;
 }
 .calls li {
+  /* each stop is a point on a timeline drawn down the left-hand side */
+  position: relative;
   display: grid;
-  grid-template-columns: 52px 1fr auto;
+  grid-template-columns: 50px 1fr auto;
+  align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  padding: 8px 8px 8px 28px;
   font-size: 14px;
-  border-bottom: 1px solid var(--ivory-rule);
+  font-weight: 500;
+  color: var(--ivory-ink);
 }
-.calls li:last-child {
-  border-bottom: 0;
+.calls li::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #3d4c43;
 }
+.calls li:first-child::after {
+  top: 50%;
+}
+.calls li:last-child::after {
+  bottom: 50%;
+}
+.calls li::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 6px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--ivory);
+  border: 2px solid #3d4c43;
+}
+/* Already passed: faded, filled dots on a pale line */
 .calls li.done {
-  color: #6f7b72;
+  color: #6b756d;
+  font-weight: 400;
 }
-.calls li.here .n {
+.calls li.done::after {
+  background: #cfc8b4;
+}
+.calls li.done::before {
+  background: #b9b19b;
+  border-color: #b9b19b;
+}
+/* The line between the last passed stop and the next one stays pale until the train gets there */
+.calls li.here::after,
+.calls li.next::after {
+  background: linear-gradient(#cfc8b4 50%, #3d4c43 50%);
+}
+/* Where the train is now, or its next stop */
+.calls li.here,
+.calls li.next {
+  background: #e4dcc4;
+  border-radius: 8px;
   font-weight: 600;
 }
-.calls li.here .t::before {
-  content: '';
+.calls li.here::before,
+.calls li.next::before {
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  margin-top: -8px;
+  background: #b07d12;
+  border-color: #efeadb;
+  box-shadow: 0 0 0 2px #b07d12;
+}
+.calls .tag {
   display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin: 0 6px 1px -13px;
-  border-radius: 50%;
-  background: #8a5a0c;
+  margin-left: 8px;
+  padding: 1px 7px 0;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+  background: var(--ivory-ink);
+  color: var(--ivory);
 }
 .calls .t {
   font-variant-numeric: tabular-nums;
@@ -517,7 +576,7 @@ button {
     border-top: 1px solid var(--ivory-rule);
   }
   .detail .calls li {
-    padding: 6px 0;
+    padding: 6px 8px 6px 28px;
     font-size: 13px;
   }
   .d-foot {

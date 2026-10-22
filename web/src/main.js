@@ -467,10 +467,15 @@ async function loadCalls() {
     } catch {}
   }
   if (!d || d.id !== selectedId) return;
+  // The train's current stop, or failing that the next one it hasn't reached
+  const hereIdx = d.stops.findIndex((s) => s.here);
+  const nextIdx = hereIdx >= 0 ? -1 : d.stops.findIndex((s) => !s.done);
   dCalls.innerHTML = d.stops
     .map(
-      (s) =>
-        `<li class="${s.done ? 'done' : ''} ${s.here ? 'here' : ''}"><span class="t">${s.s}</span><span class="n">${s.n}</span><span class="e">${
+      (s, i) =>
+        `<li class="${s.done ? 'done' : ''} ${s.here ? 'here' : ''} ${i === nextIdx ? 'next' : ''}"><span class="t">${s.s}</span><span class="n">${s.n}${
+          s.here ? '<span class="tag">Now</span>' : i === nextIdx ? '<span class="tag">Next</span>' : ''
+        }</span><span class="e">${
           s.e && s.e !== s.s ? `exp ${s.e}` : s.pl ? `plat ${s.pl}` : ''
         }</span></li>`,
     )
@@ -478,7 +483,7 @@ async function loadCalls() {
   // When a train is first opened, scroll its stop list to where it is now
   if (scrolledFor !== selectedId) {
     scrolledFor = selectedId;
-    const cur = dCalls.querySelector('li.here') || dCalls.querySelector('li:not(.done)');
+    const cur = dCalls.querySelector('li.here, li.next');
     const prev = cur && cur.previousElementSibling;
     dCalls.scrollTop = prev ? prev.offsetTop - dCalls.offsetTop : 0;
   }
