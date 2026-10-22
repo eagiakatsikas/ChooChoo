@@ -2133,3 +2133,31 @@ body.replaying .toggles {
     bottom: calc(292px + var(--safe-b));
   }
 }
+
+/* Little single / double decker icons */
+.bus-ic {
+  flex: none;
+  vertical-align: -3px;
+  margin-right: 4px;
+  color: #fff;
+}
+.d-op .bus-ic {
+  color: #d4302a;
+}
+.d-op .bus-ic rect[fill='#d4302a'] {
+  fill: #fff;
+}
+.reg .bus-ic {
+  color: #d4302a;
+  width: 12px;
+  height: 14px;
+  vertical-align: -2px;
+}
+.reg .bus-ic rect[fill='#d4302a'] {
+  fill: #fff;
+}
+.bp-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

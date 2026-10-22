@@ -1636,11 +1636,34 @@ function drawBuses(t, size, z) {
   return sel;
 }
 
+/** A side-on bus in white, 12 px long: two rows of windows for a double decker, one for a single. */
+function drawBusGlyph(x, cy, k) {
+  const dbl = k === 'D';
+  const bh = dbl ? 11 : 7.5;
+  const top = cy + 4.5 - bh; // both sit on the same "road"
+  ctx.fillStyle = '#fff';
+  roundRect(x, top, 12, bh, 1.8);
+  ctx.fill();
+  ctx.fillStyle = BUS_RED;
+  const row = (y) => {
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + 1.6 + i * 3.4, y, 2.4, 2);
+  };
+  if (dbl) row(top + 1.6);
+  row(top + (dbl ? 5.4 : 1.6));
+  // wheels
+  ctx.beginPath();
+  ctx.arc(x + 3, cy + 4.6, 1.3, 0, Math.PI * 2);
+  ctx.arc(x + 9.4, cy + 4.6, 1.3, 0, Math.PI * 2);
+  ctx.fillStyle = '#1f1414';
+  ctx.fill();
+}
+
 function drawBus(o, pt, z, isSelected) {
   const fav = busFavs.includes(o.v.r);
   const big = z >= BUS_ZOOM || isSelected;
   ctx.font = '700 11px "Work Sans", system-ui, sans-serif';
-  const w = big ? Math.max(22, ctx.measureText(o.v.n).width + 10) : 10;
+  const glyph = big && (o.v.k === 'D' || o.v.k === 'S') ? 15 : 0; // room for the bus picture
+  const w = big ? Math.max(22, ctx.measureText(o.v.n).width + 10 + glyph) : 10;
   const h = big ? 17 : 8;
   // Direction of travel: a small arrowhead on the side the bus is heading
   if (o.v.h != null && big) {
@@ -1659,13 +1682,9 @@ function drawBus(o, pt, z, isSelected) {
   roundRect(pt.x - w / 2, pt.y - h / 2, w, h, big ? 4 : 2.5);
   ctx.fillStyle = BUS_RED;
   ctx.fill();
-  // Double deckers: a dark band along the top, like the upper deck's windows
-  if (big && o.v.k === 'D') {
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = 'rgba(20, 10, 10, 0.55)';
-    ctx.fillRect(pt.x - w / 2, pt.y - h / 2, w, 4);
-    ctx.restore();
+  // A little single or double decker picture before the route number
+  if (glyph) {
+    drawBusGlyph(pt.x - w / 2 + 4, pt.y, o.v.k);
     roundRect(pt.x - w / 2, pt.y - h / 2, w, h, 4);
   }
   ctx.lineWidth = isSelected ? 3 : fav ? 2 : 1.4;
@@ -1674,7 +1693,7 @@ function drawBus(o, pt, z, isSelected) {
   if (big) {
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.fillText(o.v.n, pt.x, pt.y + 4);
+    ctx.fillText(o.v.n, pt.x + glyph / 2, pt.y + 4);
     ctx.textAlign = 'start';
   }
   // A bus you've ridden before gets a little gold badge
@@ -1700,7 +1719,7 @@ function renderBusHeader() {
   dHead.textContent = v.n;
   const facts = busFactsCache.get(v.id);
   const deckName = facts?.deck || (v.k === 'D' ? 'Double decker' : v.k === 'S' ? 'Single decker' : 'London bus');
-  dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>${esc(deckName)}`;
+  dOp.innerHTML = `${busIcon(facts?.deck || v.k) || `<span class="sw" style="--c:${BUS_RED}"></span>`}${esc(deckName)}`;
   dRoute.textContent = v.d ? `To ${v.d}` : `Route ${v.n}`;
   const r = busRoutes && busRoutes.find((x) => x.id === v.r);
   const mine = ridesOn(v.id);
@@ -1927,7 +1946,7 @@ function renderMyBuses() {
     <ul class="bp-list mb-list">${top
       .slice(0, 12)
       .map(
-        (b) => `<li><span class="mb-n">${b.n}×</span><span class="reg">${esc(b.reg)}</span><span class="bp-ends">${[...b.routes]
+        (b) => `<li><span class="mb-n">${b.n}×</span><span class="reg">${busIcon(b.deck)}${esc(b.reg)}</span><span class="bp-ends">${[...b.routes]
           .map(([r, n]) => `${esc(r)}${n > 1 ? ` ×${n}` : ''}`)
           .join(', ')} · last ${day(b.last)}${b.model ? `<small>${esc(b.model)}${b.deck ? ` · ${esc(b.deck.toLowerCase())}` : ''}</small>` : ''}</span></li>`,
       )
@@ -2013,6 +2032,16 @@ async function fetchStop(id) {
   }
 }
 
+/** The same little bus picture, as an inline icon for panels and lists. */
+function busIcon(deck) {
+  const dbl = /^double|^D$/i.test(deck || '');
+  const sgl = /^single|^S$/i.test(deck || '');
+  if (!dbl && !sgl) return '';
+  const h = dbl ? 11 : 7.5, top = 13 - h;
+  const row = (y) => [0, 1, 2].map((i) => `<rect x="${1.6 + i * 3.4}" y="${y}" width="2.4" height="2" fill="#d4302a"/>`).join('');
+  return `<svg class="bus-ic" viewBox="0 0 12 15" width="15" height="18" role="img" aria-label="${dbl ? 'Double decker' : 'Single decker'}"><rect x="0" y="${top}" width="12" height="${h}" rx="1.8" fill="currentColor"/>${dbl ? row(top + 1.6) : ''}${row(top + (dbl ? 5.4 : 1.6))}<circle cx="3" cy="13.3" r="1.3" fill="#1f1414"/><circle cx="9.4" cy="13.3" r="1.3" fill="#1f1414"/></svg>`;
+}
+
 const deckShort = (f) => (f && f.deck ? (f.deck.startsWith('Double') ? 'Double decker' : 'Single decker') : '');
 
 function renderStopHeader() {
@@ -2032,7 +2061,7 @@ function renderStopHeader() {
 function depRow(r) {
   const f = r.facts;
   const about = [deckShort(f), f && f.model, f && f.power].filter(Boolean).map(esc).join(' · ');
-  return `<li class="dep" data-reg="${esc(r.reg)}"><span class="bp-num">${esc(r.route)}</span><span class="dp-main"><b>${esc(r.dest)}</b><small><span class="reg">${esc(r.reg)}</span>${about ? ` ${about}` : ''}</small></span><span class="dp-when"><b>${r.m <= 0 ? 'Due' : `${r.m} min`}</b><small>${esc(r.at)}</small></span></li>`;
+  return `<li class="dep" data-reg="${esc(r.reg)}"><span class="bp-num">${busIcon(f && f.deck)}${esc(r.route)}</span><span class="dp-main"><b>${esc(r.dest)}</b><small><span class="reg">${esc(r.reg)}</span>${about ? ` ${about}` : ''}</small></span><span class="dp-when"><b>${r.m <= 0 ? 'Due' : `${r.m} min`}</b><small>${esc(r.at)}</small></span></li>`;
 }
 
 async function loadStopBoard() {
