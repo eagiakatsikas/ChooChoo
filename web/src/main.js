@@ -115,6 +115,7 @@ canvas.className = 'train-canvas';
 map.getContainer().appendChild(canvas);
 const ctx = canvas.getContext('2d');
 let drawn = []; // [x, y, id] for hit testing
+let hitBoxes = []; // [x0, y0, x1, y1, id]: train labels and bus tags, which can be tapped too
 
 function resize() {
   const s = map.getSize();
@@ -256,6 +257,7 @@ function draw() {
   const labels = z >= 13;
   const t = now();
   drawn = [];
+  hitBoxes = [];
   let selected = null;
 
   if (replay && replay.frame) {
@@ -339,6 +341,7 @@ function drawTrain(v, pt, p, r, label, isSelected) {
     const y = pt.y - 8;
     ctx.fillStyle = '#162720';
     ctx.fillRect(x, y, w, 16);
+    if (!String(v.id).startsWith('rp:')) hitBoxes.push([x - 2, y - 4, x + w + 2, y + 20, v.id]);
     ctx.fillStyle = '#d4a64a';
     ctx.fillText(text, x + 4, y + 12);
   }
@@ -356,6 +359,11 @@ map.on('click', (e) => {
       best = id;
       bestD = d;
     }
+  }
+  // A train's label or a bus's tag, tapped directly (the last drawn is on top)
+  for (let k = hitBoxes.length - 1; k >= 0; k--) {
+    const [x0, y0, x1, y1, id] = hitBoxes[k];
+    if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return select(id);
   }
   // A station's name, tapped directly, wins
   for (const [, , crs, box] of drawnStations) {
@@ -1363,7 +1371,8 @@ async function loadDisruptions() {
   if (DEMO) return;
   try {
     const res = await fetch(`${WORKER}/api/disruptions`);
-    disrupt = await res.json();
+    const d = await res.json();
+    disrupt = d && Array.isArray(d.lines) ? d : { lines: [] };
   } catch {
     return;
   }
@@ -1621,6 +1630,7 @@ function drawBus(o, pt, z, isSelected) {
     ctx.fillStyle = BUS_RED;
     ctx.fill();
   }
+  if (big) hitBoxes.push([pt.x - w / 2 - 3, pt.y - h / 2 - 4, pt.x + w / 2 + 3, pt.y + h / 2 + 4, 'bus:' + o.v.id]);
   roundRect(pt.x - w / 2, pt.y - h / 2, w, h, big ? 4 : 2.5);
   ctx.fillStyle = BUS_RED;
   ctx.fill();
@@ -1632,6 +1642,16 @@ function drawBus(o, pt, z, isSelected) {
     ctx.textAlign = 'center';
     ctx.fillText(o.v.n, pt.x, pt.y + 4);
     ctx.textAlign = 'start';
+  }
+  // A bus you've ridden before gets a little gold badge
+  if (ridden.has(o.v.id)) {
+    ctx.beginPath();
+    ctx.arc(pt.x + w / 2, pt.y - h / 2, big ? 5 : 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#d4a64a';
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#1f3229';
+    ctx.stroke();
   }
 }
 
@@ -1647,10 +1667,17 @@ function renderBusHeader() {
   dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>London bus`;
   dRoute.textContent = v.d ? `To ${v.d}` : `Route ${v.n}`;
   const r = busRoutes && busRoutes.find((x) => x.id === v.r);
-  dFrom.textContent = r ? `Route ${v.n} · ${r.e[0]} – ${r.e[1]}` : `Route ${v.n}`;
+  const mine = ridesOn(v.id);
+  dFrom.innerHTML = `${esc(r ? `Route ${v.n} · ${r.e[0]} – ${r.e[1]}` : `Route ${v.n}`)} · <span class="reg">${esc(v.id)}</span>${
+    mine.length ? `<span class="been">You’ve been on this bus ${mine.length === 1 ? 'once' : `${mine.length} times`}</span>` : ''
+  }`;
   const fav = busFavs.includes(v.r);
-  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? '★ Saved route' : '☆ Save route'}</button>`;
+  const onNow = mine.length && Date.now() - mine[0].at < RIDE_SAME_MS;
+  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? '★ Saved route' : '☆ Save route'}</button><button class="pill star" id="busRide" aria-pressed="${Boolean(onNow)}">${
+    onNow ? `✓ On board (ride ${mine.length})` : '🚌 I’m on this bus'
+  }</button>`;
   document.getElementById('busStar').onclick = () => toggleBusFav(v.r);
+  document.getElementById('busRide').onclick = () => logRide(v);
   dFoot.textContent = 'Estimated position · TfL Open Data';
   dFoot.classList.add('tiny');
 }
@@ -1703,6 +1730,7 @@ function setBusPanelOpen(open) {
   if (open) {
     loadBusRoutes().then(renderBusLists);
     renderBusNote();
+    renderMyBuses();
   }
 }
 document.getElementById('busClose').onclick = () => setTab('map');
@@ -1799,5 +1827,77 @@ if (busFavs.length) loadBusRoutes().then(renderBusLists);
 else renderBusLists();
 drawBusShapes();
 pollBuses();
+
+// ---------- My buses: the physical buses you've ridden (by registration) ----------
+const RIDE_SAME_MS = 45 * 60000; // tapping again within this counts as the same ride
+let rides = store.get('rides', []); // newest first: [{ reg, route, name, dest, at }]
+let ridden = new Set(rides.map((x) => x.reg));
+const ridesOn = (reg) => rides.filter((x) => x.reg === reg);
+
+function saveRides() {
+  store.set('rides', rides);
+  ridden = new Set(rides.map((x) => x.reg));
+  renderMyBuses();
+  if (isBus(selectedId)) renderBusHeader();
+}
+
+function logRide(v) {
+  const last = ridesOn(v.id)[0];
+  if (last && Date.now() - last.at < RIDE_SAME_MS) {
+    // Tapped again on the same ride: undo it
+    rides = rides.filter((x) => x !== last);
+  } else {
+    rides = [{ reg: v.id, route: v.r, name: v.n, dest: v.d, at: Date.now() }, ...rides].slice(0, 1000);
+  }
+  saveRides();
+}
+
+function renderMyBuses() {
+  const el = document.getElementById('myBuses');
+  if (!el) return;
+  if (!rides.length) {
+    el.innerHTML = '<p class="bp-intro">When you’re on a bus, tap it on the map and choose <b>🚌 I’m on this bus</b>. Choo Choo remembers the bus itself (by its registration), so you’ll see when you get the same one again. Buses you’ve ridden show a gold dot on the map.</p>';
+    return;
+  }
+  const byReg = new Map();
+  for (const x of rides) {
+    const b = byReg.get(x.reg) || { reg: x.reg, n: 0, routes: new Map(), last: x.at };
+    b.n++;
+    b.routes.set(x.name, (b.routes.get(x.name) || 0) + 1);
+    byReg.set(x.reg, b);
+  }
+  const top = [...byReg.values()].sort((a, b) => b.n - a.n || b.last - a.last);
+  const repeat = top.filter((b) => b.n > 1).length;
+  const day = (t) => new Date(t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const onMap = top.filter((b) => buses.has(b.reg));
+  el.innerHTML = `
+    <p class="mb-sum"><b>${rides.length}</b> ${rides.length === 1 ? 'ride' : 'rides'} on <b>${byReg.size}</b> different ${byReg.size === 1 ? 'bus' : 'buses'}${
+      repeat ? ` · <b>${repeat}</b> you’ve had more than once` : ''
+    }</p>
+    ${onMap.length ? `<p class="mb-near">🚌 ${onMap.map((b) => `<b>${esc(b.reg)}</b>`).join(', ')} ${onMap.length === 1 ? 'is' : 'are'} on the map right now</p>` : ''}
+    <ul class="bp-list mb-list">${top
+      .slice(0, 12)
+      .map(
+        (b) => `<li><span class="mb-n">${b.n}×</span><span class="reg">${esc(b.reg)}</span><span class="bp-ends">${[...b.routes]
+          .map(([r, n]) => `${esc(r)}${n > 1 ? ` ×${n}` : ''}`)
+          .join(', ')} · last ${day(b.last)}</span></li>`,
+      )
+      .join('')}</ul>
+    <details class="mb-recent"><summary>Recent rides</summary><ul class="bp-list">${rides
+      .slice(0, 20)
+      .map(
+        (x, i) => `<li><span class="bp-num">${esc(x.name)}</span><span class="bp-ends">${esc(x.reg)} · ${day(x.at)} ${new Date(x.at).toTimeString().slice(0, 5)}${
+          x.dest ? ` · to ${esc(x.dest)}` : ''
+        }</span><button class="al-rm" type="button" data-ride="${i}" aria-label="Remove this ride">×</button></li>`,
+      )
+      .join('')}</ul></details>`;
+}
+document.getElementById('myBuses').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ride]');
+  if (!b) return;
+  rides.splice(Number(b.dataset.ride), 1);
+  saveRides();
+});
+renderMyBuses();
 
 window.chooStarted = true;

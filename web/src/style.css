@@ -1928,3 +1928,57 @@ body.replaying .toggles {
     left: 12px;
   }
 }
+
+/* My buses */
+.reg {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #f2d24b; /* number-plate yellow */
+  color: #111;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  line-height: 18px;
+}
+.d-from .been {
+  display: block;
+  margin-top: 4px;
+  color: #8a5a0c;
+  font-weight: 600;
+}
+.mb-sum,
+.mb-near {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mb-sum b,
+.mb-near b {
+  color: var(--ivory);
+}
+.mb-near {
+  color: var(--amber);
+}
+.mb-list li {
+  grid-template-columns: 34px auto 1fr;
+  padding: 8px 0;
+}
+.mb-n {
+  font-weight: 700;
+  color: var(--amber);
+  text-align: center;
+}
+.mb-recent {
+  margin-top: 10px;
+  font-size: 13px;
+}
+.mb-recent summary {
+  cursor: pointer;
+  color: var(--amber);
+  font-weight: 600;
+}
+.mb-recent li {
+  grid-template-columns: auto 1fr 34px;
+}
