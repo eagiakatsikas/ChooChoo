@@ -388,6 +388,23 @@ button {
 .detail .panel-head {
   align-items: flex-start;
 }
+/* The heading stays put; only the list of stops scrolls */
+.detail:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.detail .calls {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--ivory-rule);
+  margin-top: 4px;
+}
+.detail .d-foot {
+  flex: none;
+}
 .d-op {
   display: flex;
   flex-wrap: wrap;
