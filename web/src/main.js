@@ -281,6 +281,7 @@ function draw() {
   }
   drawStations(size, z);
   drawBusStops(size, z);
+  drawMe();
   const selBus = drawBuses(t, size, z);
   if (selected) {
     drawTrain(selected.v, selected.pt, selected.p, r + 2.5, true, true);
@@ -2153,5 +2154,90 @@ renderStopFavs();
 refreshFavStops();
 window.addEventListener('choo:home-open', () => refreshFavStops());
 loadMapStops();
+
+// ---------- Where you are ----------
+let me = null; // { la, lo, acc (m) }
+let meWatch = null;
+let meCentreNext = false;
+const locateBtn = document.getElementById('locateBtn');
+
+function drawMe() {
+  if (!me) return;
+  const pt = toScreen(me.la, me.lo);
+  // Accuracy circle, sized in metres
+  const edge = toScreen(me.la, me.lo + me.acc / (111320 * Math.cos((me.la * Math.PI) / 180)));
+  const rad = Math.abs(edge.x - pt.x);
+  if (rad > 10) {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(74, 144, 226, 0.12)';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(74, 144, 226, 0.35)';
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = '#4a90e2';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+}
+
+function startMe(centre) {
+  if (!navigator.geolocation) return;
+  meCentreNext = centre;
+  locateBtn.classList.add('busy');
+  if (meWatch == null) {
+    meWatch = navigator.geolocation.watchPosition(
+      (p) => {
+        me = { la: p.coords.latitude, lo: p.coords.longitude, acc: p.coords.accuracy || 0 };
+        locateBtn.classList.remove('busy');
+        locateBtn.setAttribute('aria-pressed', 'true');
+        store.set('locOn', true);
+        if (meCentreNext) {
+          meCentreNext = false;
+          map.setView([me.la, me.lo], Math.max(map.getZoom(), 15));
+        }
+      },
+      (err) => {
+        locateBtn.classList.remove('busy');
+        if (err.code === 1) {
+          // Location turned off for this site
+          stopMe();
+          store.set('locOn', false);
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+    );
+  } else if (me && centre) {
+    meCentreNext = false;
+    locateBtn.classList.remove('busy');
+    map.setView([me.la, me.lo], Math.max(map.getZoom(), 15));
+  }
+}
+function stopMe() {
+  if (meWatch != null) navigator.geolocation.clearWatch(meWatch);
+  meWatch = null;
+  me = null;
+  locateBtn.setAttribute('aria-pressed', 'false');
+}
+// Tap: show where you are and go there (tap again to come back to it)
+locateBtn.onclick = () => startMe(true);
+// If you allowed it before, show your dot straight away (no prompt)
+if (store.get('locOn', false) && navigator.permissions) {
+  navigator.permissions
+    .query({ name: 'geolocation' })
+    .then((r) => r.state === 'granted' && startMe(false))
+    .catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+  // Save battery: stop watching while the app is in the background
+  if (document.visibilityState === 'hidden' && meWatch != null) {
+    navigator.geolocation.clearWatch(meWatch);
+    meWatch = null;
+  } else if (document.visibilityState === 'visible' && me) startMe(false);
+});
 
 window.chooStarted = true;

@@ -2116,3 +2116,20 @@ body.replaying .toggles {
 #stopsNearBtn {
   margin-top: 8px;
 }
+
+/* Show where I am: above the replay button */
+.locate-btn {
+  bottom: calc(var(--nav-h, 0px) + 294px);
+}
+.locate-btn[aria-pressed='true'] {
+  color: #4a90e2;
+  background: var(--slate);
+}
+.locate-btn.busy svg {
+  animation: spin 1.2s linear infinite;
+}
+@media (min-width: 900px) {
+  .locate-btn {
+    bottom: calc(292px + var(--safe-b));
+  }
+}
