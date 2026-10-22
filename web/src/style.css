@@ -17,6 +17,7 @@
   --display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
   --mono: 'Work Sans', system-ui, sans-serif;
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
 }
 
 * {
@@ -52,9 +53,9 @@ button {
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
   width: 100%;
-  height: 100%;
+  /* full screen height, including the area behind the iPhone home bar */
+  height: 100vh;
   background: var(--ground);
 }
 
@@ -89,7 +90,7 @@ button {
 /* ---------- Top bar ---------- */
 .bar {
   position: fixed;
-  top: 12px;
+  top: calc(12px + var(--safe-t));
   left: 12px;
   z-index: 1000;
   display: flex;
@@ -251,7 +252,7 @@ button {
 .filters {
   display: none;
   left: 12px;
-  top: 84px;
+  top: calc(84px + var(--safe-t));
   bottom: calc(70px + var(--safe-b));
   width: 300px;
   padding: 12px 14px 16px;
@@ -365,9 +366,9 @@ button {
 /* ---------- Train details: an ivory sheet with an arched top ---------- */
 .detail {
   right: 12px;
-  top: 12px;
+  top: calc(12px + var(--safe-t));
   width: 360px;
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px - var(--safe-t));
   padding: 26px 22px 18px;
   background: var(--ivory);
   color: var(--ivory-ink);
