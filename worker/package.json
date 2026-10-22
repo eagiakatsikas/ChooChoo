@@ -12,6 +12,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "stompit": "^1.0.0"
+    "stompit": "^1.0.0",
+    "web-push": "^3.6.7"
   }
 }

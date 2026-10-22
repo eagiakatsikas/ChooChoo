@@ -1547,3 +1547,27 @@ body:not([data-tab='map']) .toggles {
   display: block;
   color: var(--muted);
 }
+
+/* Phones: the nav bar hugs the bottom edge (just enough room for the home indicator),
+   and Home fills the space between the header and the nav bar, square to both */
+@media (max-width: 899px) {
+  :root {
+    --nav-pad: max(6px, min(var(--safe-b), 22px));
+    --nav-h: calc(54px + var(--nav-pad));
+  }
+  .tabbar {
+    height: var(--nav-h);
+    padding-bottom: var(--nav-pad);
+  }
+  .panel.home {
+    top: var(--bar-h, 100px);
+    bottom: var(--nav-h);
+    height: auto;
+    border-radius: 0;
+    border-width: 0;
+    padding-top: 6px;
+  }
+  .tabbar {
+    border-top: 1px solid var(--rule);
+  }
+}

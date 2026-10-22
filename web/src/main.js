@@ -1158,6 +1158,14 @@ function keepInView(lat, lng, pt, size) {
 }
 
 // ---------- Bottom navigation ----------
+// Full-height sheets on phones start exactly where the header ends
+const barEl = document.querySelector('.bar');
+function setBarHeight() {
+  document.documentElement.style.setProperty('--bar-h', `${barEl.getBoundingClientRect().bottom}px`);
+}
+setBarHeight();
+if (window.ResizeObserver) new ResizeObserver(setBarHeight).observe(barEl);
+window.addEventListener('resize', setBarHeight);
 function markTab(name) {
   tab = name;
   document.body.dataset.tab = name;

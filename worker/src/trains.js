@@ -140,9 +140,14 @@ function onActivation(b) {
   track(`${run.uid}|${run.date}`, run, b.train_id);
 }
 
+/** Trains cancelled recently (key → when), so alerts can say so. */
+export const cancelledKeys = new Map();
+
 function onCancellation(b) {
   const key = trainIdToKey.get(b.train_id);
   if (!key) return;
+  cancelledKeys.set(key, Date.now());
+  if (cancelledKeys.size > 5000) cancelledKeys.delete(cancelledKeys.keys().next().value);
   // Part cancellations (en route) keep the train until it reaches the cancel point.
   if (b.canx_type === 'ON CALL' || b.canx_type === 'AT ORIGIN') untrack(key);
 }
