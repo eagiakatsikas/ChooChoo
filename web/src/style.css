@@ -512,9 +512,13 @@ button {
   .filters {
     bottom: 0;
   }
-  /* the map runs behind the home bar, so lift the zoom buttons clear of the credits line */
-  .leaflet-bottom.leaflet-right {
-    margin-bottom: calc(32px + var(--safe-b));
+  /* Zoom buttons are placed against the screen edge (like the credits line and the
+     Operators button), so they always sit just above the credits on any phone */
+  .leaflet-control-zoom.leaflet-control {
+    position: fixed;
+    right: 12px;
+    bottom: calc(36px + var(--safe-b));
+    margin: 0;
   }
   .leaflet-control-attribution {
     position: fixed;
@@ -530,7 +534,7 @@ button {
     bottom: calc(30px + var(--safe-b));
   }
   .basemap-switch {
-    bottom: calc(146px + var(--safe-b));
+    bottom: calc(118px + var(--safe-b));
   }
 }
 
