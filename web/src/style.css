@@ -90,7 +90,7 @@ button {
 /* ---------- Top bar ---------- */
 .bar {
   position: fixed;
-  top: calc(12px + var(--safe-t));
+  top: calc(4px + var(--safe-t));
   left: 12px;
   z-index: 1000;
   display: flex;
@@ -512,8 +512,9 @@ button {
   .filters {
     bottom: 0;
   }
+  /* the map runs behind the home bar, so lift the zoom buttons clear of the credits line */
   .leaflet-bottom.leaflet-right {
-    margin-bottom: calc(26px + var(--safe-b));
+    margin-bottom: calc(32px + var(--safe-b));
   }
   .leaflet-control-attribution {
     position: fixed;
@@ -529,7 +530,7 @@ button {
     bottom: calc(30px + var(--safe-b));
   }
   .basemap-switch {
-    bottom: calc(132px + var(--safe-b));
+    bottom: calc(146px + var(--safe-b));
   }
 }
 
@@ -546,4 +547,17 @@ button {
   color: var(--ivory-ink);
   font-size: 14px;
   word-break: break-word;
+}
+
+/* Solid band behind the phone's status bar (clock, battery): the map no longer shows through it blurred */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-t);
+  z-index: 1500;
+  background: var(--slate);
+  pointer-events: none;
 }
