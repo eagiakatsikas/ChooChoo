@@ -92,3 +92,12 @@ test('departures board from National Rail when a key is set', { skip: nearMidnig
     config.ldbKey = '';
   }
 });
+
+test('departures board with no destination lists every train leaving', { skip: nearMidnight && 'near midnight' }, async () => {
+  const b = await board('WAT', '');
+  assert.equal(b.source, 'timetable');
+  assert.equal(b.to, null);
+  assert.ok(b.rows.length >= 3, `rows ${b.rows.length}`);
+  assert.ok(b.rows.every((r) => !r.best && r.mins == null));
+  assert.equal(b.rows[0].dest, 'Woking');
+});

@@ -5,6 +5,7 @@ import '@maplibre/maplibre-gl-leaflet';
 import './style.css';
 import { OPERATORS, opName, opColour, delayColour } from './operators.js';
 import { demoSnapshot, demoDetail } from './demo.js';
+import { createHome } from './home.js';
 
 // ---------- Data source ----------
 const params = new URLSearchParams(location.search);
@@ -51,6 +52,7 @@ const hidden = new Set(store.get('hiddenOps', []));
 let colourMode = store.get('colourMode', 'delay');
 let query = '';
 let selectedId = null;
+let tab = 'map'; // bottom navigation: home, map, departures, buses
 
 // ---------- Map ----------
 const map = L.map('map', {
@@ -264,8 +266,16 @@ function draw() {
     }
     drawTrain(v, pt, p, r, labels, false);
   }
+  drawStations(size, z);
   const selBus = drawBuses(t, size, z);
-  if (selected) drawTrain(selected.v, selected.pt, selected.p, r + 2.5, true, true);
+  if (selected) {
+    drawTrain(selected.v, selected.pt, selected.p, r + 2.5, true, true);
+    if (following === selectedId) keepInView(selected.p.lat, selected.p.lng, selected.pt, size);
+  }
+  if (selBus && following === selectedId) {
+    const bp = busPos(selBus.o, t);
+    keepInView(bp.la, bp.lo, selBus.pt, size);
+  }
   if (selBus) drawBus(selBus.o, selBus.pt, z, true);
   requestAnimationFrame(draw);
 }
@@ -337,8 +347,19 @@ map.on('click', (e) => {
       bestD = d;
     }
   }
-  if (best) select(best);
-  else if (selectedId) closeDetail();
+  if (best) return select(best);
+  // No train or bus there: a station?
+  let stn = null;
+  let stnD = 16;
+  for (const [px, py, crs] of drawnStations) {
+    const d = Math.hypot(px - x, py - y);
+    if (d < stnD) {
+      stn = crs;
+      stnD = d;
+    }
+  }
+  if (stn) return openBoard(stn, null);
+  if (selectedId) closeDetail();
 });
 
 // ---------- Status ----------
@@ -551,6 +572,7 @@ async function loadCalls() {
 }
 
 function select(id) {
+  if (following && following !== id) setFollow(null);
   selectedId = id;
   detailEl.hidden = false;
   if (!finderEl.hidden) setFinderOpen(false);
@@ -558,6 +580,8 @@ function select(id) {
   if (window.matchMedia('(max-width: 899px)').matches) {
     setFiltersOpen(false);
     setBusPanelOpen(false);
+    setHomeOpen(false);
+    if (tab !== 'map') markTab('map');
   }
   renderDetailHeader();
   loadCalls();
@@ -570,6 +594,7 @@ function select(id) {
 
 function closeDetail() {
   selectedId = null;
+  setFollow(null);
   detailEl.hidden = true;
   clearInterval(detailTimer);
   if (routeLine) routeLine.remove();
@@ -639,7 +664,6 @@ setInterval(() => selectedId && renderDetailHeader(), 5000);
 
 // ---------- Train finder: nearest station → destination → departures board ----------
 const finderEl = document.getElementById('finder');
-const finderBtn = document.getElementById('finderOpen');
 const fFrom = document.getElementById('fFrom');
 const fTo = document.getElementById('fTo');
 const fSuggest = document.getElementById('fSuggest');
@@ -847,6 +871,8 @@ for (const input of [fFrom, fTo]) {
     setTimeout(() => {
       if (document.activeElement !== fFrom && document.activeElement !== fTo) {
         hideSuggest();
+        // Destination cleared: show every train leaving instead
+        if (!fTo.value.trim() && route.to) setStation('to', null);
         // Put back the chosen station's name if the text was left half-typed
         fFrom.value = byCrs(route.from)?.n || '';
         fTo.value = byCrs(route.to)?.n || '';
@@ -942,10 +968,14 @@ function expText(r) {
 
 function renderBoard(d) {
   lastBoard = d;
-  const head = `<div class="b-head"><div class="b-title">${esc(short(d.to.name))}<small>Direct trains from ${esc(d.from.name)} · updated ${d.generated}</small></div><button class="b-save" type="button"></button></div>`;
+  const head = d.to
+    ? `<div class="b-head"><div class="b-title">${esc(short(d.to.name))}<small>Direct trains from ${esc(d.from.name)} · updated ${d.generated}</small></div><button class="b-save" type="button"></button></div>`
+    : `<div class="b-head"><div class="b-title">Departures<small>Every train from ${esc(d.from.name)} · updated ${d.generated}. Add a destination to narrow it down.</small></div></div>`;
   let body;
   if (!d.rows.length) {
-    body = `<p class="b-empty">No direct trains to ${esc(d.to.name)} in the next two hours. You may need to change trains.</p>`;
+    body = d.to
+      ? `<p class="b-empty">No direct trains to ${esc(d.to.name)} in the next two hours. You may need to change trains.</p>`
+      : `<p class="b-empty">No trains from ${esc(d.from.name)} in the next two hours.</p>`;
   } else {
     body = d.rows
       .map((r) => {
@@ -956,6 +986,7 @@ function renderBoard(d) {
           r.mins != null && !r.cancelled ? `${r.mins} min` : '',
           r.stops != null ? (r.stops === 0 ? 'non-stop' : `${r.stops} stop${r.stops === 1 ? '' : 's'}`) : '',
           r.op ? esc(r.op) : '',
+          r.coaches ? `${r.coaches} coaches` : '',
         ].filter(Boolean);
         const plat = r.plat
           ? `<span class="b-plat ${r.platLive ? '' : 'planned'}"><b>${esc(r.plat)}</b><small>${r.platLive ? 'Platform' : 'Planned'}</small></span>`
@@ -973,13 +1004,14 @@ function renderBoard(d) {
       ? '<p class="b-foot">Live times and platforms from National Rail. Tap a train to see it on the map.</p>'
       : '<p class="b-foot">Timetabled platforms shown until the station announces them. Tap a train to see it on the map.</p>';
   fBoard.innerHTML = head + body + foot;
-  fBoard.querySelector('.b-save').onclick = toggleFav;
+  const save = fBoard.querySelector('.b-save');
+  if (save) save.onclick = toggleFav;
   renderBoardHead();
 }
 
 async function loadBoard() {
   clearInterval(boardTimer);
-  if (!route.from || !route.to) {
+  if (!route.from) {
     fBoard.innerHTML = '';
     return;
   }
@@ -987,14 +1019,14 @@ async function loadBoard() {
     fBoard.innerHTML = '<p class="b-empty">Choose two different stations.</p>';
     return;
   }
-  const key = `${route.from}|${route.to}`;
-  if (!lastBoard || `${lastBoard.from.crs}|${lastBoard.to.crs}` !== key) {
+  const key = `${route.from}|${route.to || ''}`;
+  if (!lastBoard || `${lastBoard.from.crs}|${lastBoard.to?.crs || ''}` !== key) {
     fBoard.innerHTML = '<p class="b-empty">Checking departures…</p>';
   }
   try {
-    const res = await fetch(`${WORKER}/api/board?from=${route.from}&to=${route.to}`);
+    const res = await fetch(`${WORKER}/api/board?from=${route.from}&to=${route.to || ''}`);
     const d = await res.json();
-    if (`${route.from}|${route.to}` !== key) return; // changed meanwhile
+    if (`${route.from}|${route.to || ''}` !== key) return; // changed meanwhile
     if (d.error) fBoard.innerHTML = `<p class="b-empty">${esc(d.error)}.</p>`;
     else renderBoard(d);
   } catch {
@@ -1012,21 +1044,33 @@ fBoard.addEventListener('click', (e) => {
     setNote('That train isn’t on the map yet. It appears shortly before it’s due to leave.');
     return;
   }
-  setFinderOpen(false);
+  showTrain(id);
+});
+
+/** Go to the map and show a train, e.g. from a departures board. */
+function showTrain(id) {
+  const v = trains.get(id);
+  if (!v) return false;
+  setTab('map');
   select(id);
   const p = position(v, now());
   if (p) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14));
-});
+  return true;
+}
 
-async function setFinderOpen(open) {
+/** Open or close Departures. preset: { from, to } to show a particular board (to may be null). */
+async function setFinderOpen(open, preset = null) {
   finderEl.hidden = !open;
-  finderBtn.setAttribute('aria-expanded', open);
+  if (open) markTab('departures');
+  else if (tab === 'departures') markTab('map');
   if (!open) {
     clearInterval(boardTimer);
     hideSuggest();
     return;
   }
   closeDetail();
+  setHomeOpen(false);
+  setBusPanelOpen(false);
   if (window.matchMedia('(max-width: 899px)').matches) setFiltersOpen(false);
   else if (filtersEl.classList.contains('open')) setFiltersOpen(false);
   try {
@@ -1035,18 +1079,131 @@ async function setFinderOpen(open) {
     setNote('Couldn’t load the station list. Check your connection and try again.');
     return;
   }
+  if (preset) {
+    route.from = preset.from;
+    route.to = preset.to || null;
+    store.set('fFrom', route.from);
+    store.set('fTo', route.to);
+    setNote('');
+  }
   fFrom.value = byCrs(route.from)?.n || '';
   fTo.value = byCrs(route.to)?.n || '';
   renderFavs();
   // Work out where you are each time the finder opens (once per visit)
-  if (!located) locate();
+  if (!located && !preset) locate();
   loadBoard();
 }
-finderBtn.onclick = () => setFinderOpen(finderEl.hidden);
-document.getElementById('finderClose').onclick = () => setFinderOpen(false);
+document.getElementById('finderClose').onclick = () => setTab('map');
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !finderEl.hidden && fSuggest.hidden) setFinderOpen(false);
 });
+
+// ---------- Stations on the map (tap one for its departures) ----------
+let drawnStations = [];
+function drawStations(size, z) {
+  drawnStations = [];
+  if (z < 12 || !stations) return;
+  const b = map.getBounds().pad(0.05);
+  const big = z >= 14;
+  ctx.font = '600 11px "Work Sans", system-ui, sans-serif';
+  for (const st of stations) {
+    if (st.la < b.getSouth() || st.la > b.getNorth() || st.lo < b.getWest() || st.lo > b.getEast()) continue;
+    const pt = toScreen(st.la, st.lo);
+    drawnStations.push([pt.x, pt.y, st.c]);
+    // A white station tick with a dark ring, like a railway map
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, big ? 4.5 : 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#efeadb';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#162720';
+    ctx.stroke();
+    if (big) {
+      const name = short(st.n);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(22,39,32,0.85)';
+      ctx.strokeText(name, pt.x + 7, pt.y - 6);
+      ctx.fillStyle = '#efeadb';
+      ctx.fillText(name, pt.x + 7, pt.y - 6);
+    }
+  }
+}
+// The station list is also needed for the map's station ticks
+loadStations().catch(() => {});
+
+/** Departures for a station (to may be null for every train). */
+function openBoard(from, to) {
+  setTab('departures', { from, to });
+}
+
+// ---------- Follow a train or bus ----------
+let following = null;
+let lastPan = 0;
+const followBtn = document.getElementById('dFollow');
+function setFollow(id) {
+  following = id;
+  followBtn.setAttribute('aria-pressed', Boolean(id));
+  followBtn.textContent = id ? 'Following' : 'Follow';
+}
+followBtn.onclick = () => setFollow(following ? null : selectedId);
+map.on('dragstart', () => following && setFollow(null)); // you moved the map yourself
+function keepInView(lat, lng, pt, size) {
+  // Recentre gently when it drifts out of the middle of the screen
+  const mx = size.x * 0.3, my = size.y * 0.3;
+  if (pt.x > mx && pt.x < size.x - mx && pt.y > my && pt.y < size.y - my) return;
+  if (Date.now() - lastPan < 1200) return;
+  lastPan = Date.now();
+  map.panTo([lat, lng], { animate: true, duration: 0.8 });
+}
+
+// ---------- Bottom navigation ----------
+function markTab(name) {
+  tab = name;
+  document.body.dataset.tab = name;
+  for (const b of document.querySelectorAll('.tabbar [data-tab]')) b.setAttribute('aria-pressed', b.dataset.tab === name);
+}
+const home = createHome({
+  WORKER,
+  store,
+  esc,
+  short,
+  now,
+  byCrs,
+  loadStations,
+  expText,
+  favs: () => favs,
+  setTab: (t) => setTab(t),
+  openBoard,
+  showTrain,
+});
+function setHomeOpen(open) {
+  if (home.isOpen() === open) return;
+  home.open(open);
+  if (open) markTab('home');
+  else if (tab === 'home') markTab('map');
+}
+document.getElementById('homeClose').onclick = () => setTab('map');
+
+function setTab(name, preset = null) {
+  if (name !== 'home') setHomeOpen(false);
+  if (name !== 'departures' && !finderEl.hidden) setFinderOpen(false);
+  if (name !== 'buses') setBusPanelOpen(false);
+  if (name === 'home' || name === 'buses') setFiltersOpen(false);
+  if (name !== 'map' && window.matchMedia('(max-width: 899px)').matches) closeDetail();
+  markTab(name);
+  if (name === 'home') setHomeOpen(true);
+  if (name === 'departures') setFinderOpen(true, preset);
+  if (name === 'buses') setBusPanelOpen(true);
+}
+for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
+  b.addEventListener('click', () => {
+    // Tapping Departures again while it's open keeps it; tapping Map closes everything
+    setTab(b.dataset.tab);
+  });
+}
+// Open on Home when there's a commute to show, otherwise the map
+if (favs.length && !params.has('demo')) setTab('home');
+else markTab('map');
 
 // ---------- Ding Ding: buses ----------
 // Favourite routes show at any zoom; zoomed in, every bus in view. Positions come from the
@@ -1233,7 +1390,6 @@ async function loadBusCalls() {
 
 // ---------- Favourite routes and the Ding Ding panel ----------
 const busPanel = document.getElementById('busPanel');
-const busToggle = document.getElementById('busToggle');
 const busSearch = document.getElementById('busSearch');
 const busResults = document.getElementById('busResults');
 const busFavList = document.getElementById('busFavList');
@@ -1244,14 +1400,14 @@ function setBusPanelOpen(open) {
   if (!panel) return;
   if (open) setFiltersOpen(false);
   panel.classList.toggle('open', open);
-  document.getElementById('busToggle').setAttribute('aria-expanded', open);
+  if (open) markTab('buses');
+  else if (tab === 'buses') markTab('map');
   if (open) {
     loadBusRoutes().then(renderBusLists);
     renderBusNote();
   }
 }
-busToggle.onclick = () => setBusPanelOpen(!busPanel.classList.contains('open'));
-document.getElementById('busClose').onclick = () => setBusPanelOpen(false);
+document.getElementById('busClose').onclick = () => setTab('map');
 
 async function loadBusRoutes() {
   if (busRoutes && busRoutes.length) return busRoutes;

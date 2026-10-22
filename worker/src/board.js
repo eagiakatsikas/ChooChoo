@@ -67,8 +67,8 @@ function markBest(rows, nowMin) {
 
 function timetableBoard(from, to, now) {
   const A = ref.stations.get(from);
-  const B = ref.stations.get(to);
-  if (!A || !B) return null;
+  const B = to ? ref.stations.get(to) : null; // no destination: every departure
+  if (!A || (to && !B)) return null;
   const rows = [];
   for (const [key, run] of sched.runs) {
     const locs = run.locs;
@@ -81,13 +81,15 @@ function timetableBoard(from, to, now) {
     }
     if (i < 0) continue;
     let j = -1;
-    for (let k = i + 1; k < locs.length; k++) {
-      if (B.tiplocs.has(locs[k].t) && locs[k].a != null && locs[k].pub) {
-        j = k;
-        break;
+    if (B) {
+      for (let k = i + 1; k < locs.length; k++) {
+        if (B.tiplocs.has(locs[k].t) && locs[k].a != null && locs[k].pub) {
+          j = k;
+          break;
+        }
       }
-    }
-    if (j < 0) continue;
+      if (j < 0) continue;
+    } else j = locs.length - 1;
     const depAt = runEpoch(run, locs[i].d);
     if (depAt < now - 60000 || depAt > now + WINDOW_MIN * 60000) continue;
 
@@ -116,17 +118,18 @@ function timetableBoard(from, to, now) {
       etdTime: delay ? hhmm(depAt + delay * 60000) : null,
       plat,
       platLive,
-      sta: hhmm(arrAt),
-      eta: delay ? hhmm(arrAt + delay * 60000) : 'On time',
-      etaTime: delay ? hhmm(arrAt + delay * 60000) : null,
-      mins: Math.round((arrAt - depAt) / 60000),
-      stops: locs.slice(i + 1, j).filter((l) => l.pub).length,
+      sta: B ? hhmm(arrAt) : '',
+      eta: B ? (delay ? hhmm(arrAt + delay * 60000) : 'On time') : '',
+      etaTime: B && delay ? hhmm(arrAt + delay * 60000) : null,
+      mins: B ? Math.round((arrAt - depAt) / 60000) : null,
+      stops: B ? locs.slice(i + 1, j).filter((l) => l.pub).length : null,
+      coaches: null,
       _dep: depAt,
     });
   }
   rows.sort((a, b) => a._dep - b._dep);
   for (const r of rows) delete r._dep;
-  return rows.slice(0, 12);
+  return rows.slice(0, B ? 12 : 20);
 }
 
 // ---------- National Rail Live Departure Boards ----------
@@ -152,14 +155,15 @@ function matchRuns(from, rows) {
 }
 
 async function ldbBoard(from, to) {
-  const url = `${config.ldbUrl}/GetDepBoardWithDetails/${encodeURIComponent(from)}?numRows=12&filterCrs=${encodeURIComponent(to)}&filterType=to&timeWindow=${WINDOW_MIN}`;
+  const filter = to ? `&filterCrs=${encodeURIComponent(to)}&filterType=to` : '';
+  const url = `${config.ldbUrl}/GetDepBoardWithDetails/${encodeURIComponent(from)}?numRows=${to ? 12 : 20}${filter}&timeWindow=${WINDOW_MIN}`;
   const res = await fetch(url, { headers: { 'x-apikey': config.ldbKey, Accept: 'application/json' } });
   if (!res.ok) throw new Error(`National Rail board: HTTP ${res.status}`);
   const data = await res.json();
   const rows = [];
   for (const s of arr(data.trainServices)) {
     const cps = arr(s.subsequentCallingPoints).flatMap((g) => arr(g.callingPoint));
-    const cp = cps.find((c) => c.crs === to);
+    const cp = to ? cps.find((c) => c.crs === to) : null;
     const etd = s.etd || '';
     const eta = cp?.et || cp?.at || '';
     const cancelled = Boolean(s.isCancelled) || /cancel/i.test(etd) || Boolean(cp?.isCancelled);
@@ -179,6 +183,7 @@ async function ldbBoard(from, to) {
       etaTime: /^\d\d:\d\d$/.test(eta) ? eta : null,
       mins: diff(mins(s.std), mins(cp?.st)),
       stops: cp ? cps.indexOf(cp) : null,
+      coaches: Number(s.length) || null, // train length, when the station knows it
       cancelled,
       reason: s.cancelReason || s.delayReason || undefined,
     });
@@ -190,7 +195,7 @@ async function ldbBoard(from, to) {
 export async function board(from, to) {
   from = String(from || '').toUpperCase();
   to = String(to || '').toUpperCase();
-  if (!ref.stations.has(from) || !ref.stations.has(to)) return { error: 'Unknown station' };
+  if (!ref.stations.has(from) || (to && !ref.stations.has(to))) return { error: 'Unknown station' };
   if (from === to) return { error: 'Choose two different stations' };
   const k = `${from}|${to}`;
   const hit = cache.get(k);
@@ -203,7 +208,7 @@ export async function board(from, to) {
   if (config.ldbKey) {
     try {
       const r = await ldbBoard(from, to);
-      data = { source: 'national-rail', rows: markBest(r.rows, nowMin), messages: r.messages };
+      data = { source: 'national-rail', rows: to ? markBest(r.rows, nowMin) : r.rows, messages: r.messages };
       ldbState.lastOk = now;
       ldbState.lastError = null;
     } catch (err) {
@@ -213,10 +218,10 @@ export async function board(from, to) {
   }
   if (!data) {
     const rows = timetableBoard(from, to, now);
-    data = { source: 'timetable', rows: markBest(rows || [], nowMin), messages: [] };
+    data = { source: 'timetable', rows: to ? markBest(rows || [], nowMin) : rows || [], messages: [] };
   }
   data.from = { crs: from, name: ref.stations.get(from).name };
-  data.to = { crs: to, name: ref.stations.get(to).name };
+  data.to = to ? { crs: to, name: ref.stations.get(to).name } : null;
   data.generated = hhmm(now);
   cache.set(k, { at: now, data });
   if (cache.size > 500) cache.delete(cache.keys().next().value);

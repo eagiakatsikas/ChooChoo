@@ -1177,3 +1177,340 @@ body::before {
   font-weight: 600;
   color: var(--ivory-muted);
 }
+
+/* ---------- Bottom navigation ---------- */
+:root {
+  --nav-h: 0px;
+}
+.tabbar {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  background: var(--slate);
+  border: 1px solid var(--rule);
+}
+.tabbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tabbar svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tabbar button[aria-pressed='true'] {
+  color: var(--amber);
+}
+.tabbar #busSummary:not(:empty) {
+  margin-left: 4px;
+  font-weight: 700;
+}
+.tabbar #busSummary:not(:empty)::before {
+  content: '· ';
+}
+/* Map controls belong to the Map tab */
+body:not([data-tab='map']) .toggles {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .tabbar {
+    left: 50%;
+    bottom: calc(14px + var(--safe-b));
+    transform: translateX(-50%);
+    padding: 4px;
+    gap: 2px;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .tabbar button {
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+  .tabbar button[aria-pressed='true'] {
+    background: #24392f;
+  }
+  .panel.home {
+    left: 12px;
+    top: calc(84px + var(--safe-t));
+    bottom: calc(84px + var(--safe-b));
+    width: 420px;
+    padding: 14px 16px 16px;
+  }
+}
+
+@media (max-width: 899px) {
+  :root {
+    --nav-h: calc(58px + var(--safe-b));
+  }
+  .tabbar {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--nav-h);
+    padding-bottom: var(--safe-b);
+    border-width: 1px 0 0;
+  }
+  .tabbar button {
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 11px;
+  }
+  /* Sheets now open above the nav bar */
+  .filters,
+  .detail,
+  .panel.finder,
+  .panel.home {
+    bottom: var(--nav-h);
+  }
+  .panel.detail,
+  .filters,
+  .panel.finder {
+    padding-bottom: 14px;
+  }
+  .panel.home {
+    left: 0;
+    right: 0;
+    top: auto;
+    width: auto;
+    height: calc(100dvh - var(--nav-h) - var(--safe-t) - 88px);
+    padding: 14px 14px 16px;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+  }
+  .leaflet-control-attribution {
+    bottom: var(--nav-h);
+  }
+  .leaflet-control-zoom.leaflet-control {
+    bottom: calc(var(--nav-h) + 22px);
+  }
+  .toggles {
+    bottom: calc(var(--nav-h) + 18px);
+  }
+  .basemap-switch {
+    bottom: calc(var(--nav-h) + 104px);
+  }
+  body:not([data-tab='map']) .basemap-switch,
+  body:not([data-tab='map']) .leaflet-control-zoom {
+    display: none;
+  }
+  /* The header no longer holds a button; and sits a touch lower, clear of the iPhone's blur */
+  .bar {
+    padding: calc(var(--safe-t) + 26px) 16px 12px;
+  }
+}
+
+/* ---------- Home ---------- */
+.panel.home {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.panel.home:not([hidden]) {
+  display: block;
+}
+#homeBody {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+.h-card {
+  padding: 14px;
+  background: var(--berth);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+.h-route {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.h-route small,
+.h-head {
+  display: block;
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.h-route b {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--ivory);
+}
+.h-swap {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--slate);
+  color: var(--amber);
+  font-size: 20px;
+  cursor: pointer;
+}
+.h-why {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.h-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0f1c17;
+}
+.h-big {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.h-time {
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.h-in {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ivory);
+}
+.h-plat {
+  display: grid;
+  justify-items: center;
+  min-width: 64px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--amber);
+  color: #162720;
+}
+.h-plat b {
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1;
+}
+.h-plat small {
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+}
+.h-leave {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #24392f;
+  font-weight: 700;
+  color: var(--ivory);
+}
+.h-board {
+  margin-top: 10px;
+}
+.h-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+}
+.h-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--amber);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.h-routes {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.h-routes button {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid #2c4539;
+  background: none;
+  color: var(--ivory);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.h-routes li:last-child button {
+  border-bottom: 0;
+}
+.h-r {
+  font-weight: 600;
+}
+.h-n {
+  font-size: 13px;
+  color: var(--muted);
+}
+.h-empty p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.h-empty b {
+  color: var(--ivory);
+}
+.h-btn {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  background: none;
+  color: var(--amber);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Follow button in the train panel */
+.d-follow {
+  margin: -2px 4px 0 auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid #c9bf9f;
+  background: none;
+  color: var(--ivory-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.d-follow[aria-pressed='true'] {
+  background: var(--ivory-ink);
+  color: var(--ivory);
+  border-color: var(--ivory-ink);
+}
