@@ -17,7 +17,7 @@ const trains = new Map(); // id → view from the worker
 // Ding Ding: buses. id → { v: view, fla, flo (where it was drawn when the update came), t0 }
 const buses = new Map();
 let busFavs = store0('busFavs', []); // TfL route ids, e.g. ['93', 'n93']
-let busesOn = store0('busesOn', true); // every bus when zoomed in (favourites always show)
+let busesOn = store0('busesOn', false); // every bus when zoomed in (favourites always show)
 const BUS_ZOOM = 14;
 const isBus = (id) => typeof id === 'string' && id.startsWith('bus:');
 function store0(k, d) {
