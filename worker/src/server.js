@@ -7,7 +7,7 @@ import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
-import { busState, busesFor, busDetail, routeList, routeShapes, busTo } from './buses.js';
+import { busState, busesFor, busDetail, routeList, routeShapes, busTo, stopsIn, stopsNear, stopBoard } from './buses.js';
 import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
 import { record, frameAt, replayInfo } from './replay.js';
 import { euroViews, euroDetail, euroState } from './eurostar.js';
@@ -197,6 +197,21 @@ export function startServer() {
       busTo(la, lo, st)
         .then((d) => json(res, 200, d))
         .catch((err) => json(res, 500, { error: err.message }));
+      return;
+    }
+    if (url.pathname === '/api/stops') {
+      // Bus stops in a zoomed-in view (?b=s,w,n,e) or near a point (?la=&lo=)
+      const b = (url.searchParams.get('b') || '').split(',').map(Number);
+      if (b.length === 4 && b.every(Number.isFinite)) return json(res, 200, stopsIn(b));
+      const la = Number(url.searchParams.get('la'));
+      const lo = Number(url.searchParams.get('lo'));
+      if (Number.isFinite(la) && Number.isFinite(lo)) return json(res, 200, stopsNear(la, lo));
+      return json(res, 400, { error: 'Need b, or la and lo' });
+    }
+    if (url.pathname.startsWith('/api/stop/')) {
+      stopBoard(decodeURIComponent(url.pathname.slice('/api/stop/'.length)))
+        .then((d) => json(res, d.error ? 400 : 200, d))
+        .catch((err) => json(res, 502, { error: err.message }));
       return;
     }
     if (url.pathname === '/api/busroutes') {

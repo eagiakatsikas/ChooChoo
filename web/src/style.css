@@ -2018,3 +2018,101 @@ body.replaying .toggles {
 .mb-list .bp-ends {
   white-space: normal;
 }
+
+/* Bus stop boards */
+.calls.deps li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--ivory-rule);
+  cursor: pointer;
+}
+.calls.deps li::before,
+.calls.deps li::after {
+  display: none;
+}
+.calls.deps li.dep-empty {
+  display: block;
+  color: var(--ivory-muted);
+  cursor: default;
+}
+.dp-main b {
+  display: block;
+  font-size: 14px;
+}
+.dp-main small,
+.dp-when small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ivory-muted);
+}
+.dp-when {
+  text-align: right;
+}
+.dp-when b {
+  font-size: 15px;
+  color: #8a5a0c;
+}
+/* Saved stops (Ding Ding panel and Home): dark theme */
+.sf {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--berth);
+  border: 1px solid var(--rule);
+}
+.sf-head {
+  display: block;
+  width: 100%;
+  padding: 2px 0 6px;
+  border: 0;
+  background: none;
+  color: var(--ivory);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sf-head small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sf-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sf-rows li.dep {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid #2c4539;
+  font-size: 13px;
+}
+.sf-rows .dp-main small,
+.sf-rows .dp-when small {
+  color: var(--muted);
+}
+.sf-rows .dp-when b {
+  color: var(--amber);
+}
+.sf-rows .dep-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+#stopsNear {
+  margin-top: 4px;
+}
+#stopsNear li {
+  display: block;
+  border-bottom: 1px solid #2c4539;
+}
+#stopsNearBtn {
+  margin-top: 8px;
+}

@@ -89,3 +89,15 @@ test('bus fleet: single or double deck and model, by registration', async () => 
   assert.equal(f.fleetNo, 'DW201');
   assert.equal(f.year, 2009);
 });
+
+test('bus stops: indexed from the routes, found in a box and near a point', async () => {
+  const { stopsIn, stopsNear, stopIndex } = await import('../src/buses.js');
+  assert.ok(stopIndex.has('S0'));
+  const inBox = stopsIn([51.41, -0.225, 51.43, -0.205]);
+  assert.deepEqual(inBox.map((x) => x.i).sort(), ['S0', 'S0i', 'S1', 'S1i']);
+  assert.deepEqual(inBox[0].r, ['93']);
+  assert.equal(stopsIn([51, -1, 52, 0]).length, 0, 'not when zoomed out');
+  const near = stopsNear(51.4203, -0.2198);
+  assert.ok(['S0', 'S0i'].includes(near[0].i));
+  assert.ok(near[0].d < 50);
+});

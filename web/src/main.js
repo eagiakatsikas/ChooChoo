@@ -22,6 +22,7 @@ let busFavs = store0('busFavs', []); // TfL route ids, e.g. ['93', 'n93']
 let busesOn = store0('busesOn', false); // every bus when zoomed in (favourites always show)
 const BUS_ZOOM = 14;
 const isBus = (id) => typeof id === 'string' && id.startsWith('bus:');
+const isStop = (id) => typeof id === 'string' && id.startsWith('stop:');
 function store0(k, d) {
   try {
     const v = localStorage.getItem('lt.' + k);
@@ -279,6 +280,7 @@ function draw() {
     drawTrain(v, pt, p, r, labels, false);
   }
   drawStations(size, z);
+  drawBusStops(size, z);
   const selBus = drawBuses(t, size, z);
   if (selected) {
     drawTrain(selected.v, selected.pt, selected.p, r + 2.5, true, true);
@@ -380,6 +382,17 @@ map.on('click', (e) => {
     }
   }
   if (stn && (!best || stnD < 6)) return openBoard(stn, null);
+  // A bus stop, if no train or bus is right there
+  let stop = null;
+  let stopD = 14;
+  for (const [px, py, id] of drawnStops) {
+    const d = Math.hypot(px - x, py - y);
+    if (d < stopD) {
+      stop = id;
+      stopD = d;
+    }
+  }
+  if (stop && (!best || stopD < 5)) return select('stop:' + stop);
   if (best) return select(best);
   if (selectedId) closeDetail();
 });
@@ -545,7 +558,10 @@ function trainSpeed(v) {
 
 function renderDetailHeader() {
   const ab = document.getElementById('dAlert');
-  ab.hidden = DEMO || isBus(selectedId);
+  ab.hidden = DEMO || isBus(selectedId) || isStop(selectedId);
+  document.getElementById('dFollow').hidden = isStop(selectedId);
+  dCalls.classList.toggle('deps', isStop(selectedId));
+  if (isStop(selectedId)) return renderStopHeader();
   if (!ab.hidden) {
     const on = alerts && alerts.has(selectedId);
     ab.setAttribute('aria-pressed', Boolean(on));
@@ -570,6 +586,7 @@ function renderDetailHeader() {
 
 async function loadCalls() {
   if (isBus(selectedId)) return loadBusCalls();
+  if (isStop(selectedId)) return loadStopBoard();
   let d = null;
   if (DEMO) d = demoDetail(selectedId, now());
   else {
@@ -1301,6 +1318,7 @@ document.getElementById('alertCount').textContent = alerts.list().length || '';
 function setHomeOpen(open) {
   if (home.isOpen() === open) return;
   home.open(open);
+  if (open) window.dispatchEvent(new Event('choo:home-open'));
   if (open) markTab('home');
   else if (tab === 'home') markTab('map');
 }
@@ -1759,6 +1777,7 @@ function setBusPanelOpen(open) {
     loadBusRoutes().then(renderBusLists);
     renderBusNote();
     renderMyBuses();
+    refreshFavStops();
   }
 }
 document.getElementById('busClose').onclick = () => setTab('map');
@@ -1928,5 +1947,211 @@ document.getElementById('myBuses').addEventListener('click', (e) => {
   saveRides();
 });
 renderMyBuses();
+
+// ---------- Bus stops: tap one for what's due, save your favourites ----------
+const STOP_ZOOM = 16;
+let mapStops = []; // [{ i, n, la, lo, r }] in the current view
+let drawnStops = [];
+let stopFavs = store.get('busStopFavs', []); // [{ i, n }]
+const stopBoards = new Map(); // id → board from the worker
+let stopTimer = null;
+
+async function loadMapStops() {
+  if (DEMO || !showBuses || map.getZoom() < STOP_ZOOM) {
+    mapStops = [];
+    return;
+  }
+  const b = map.getBounds().pad(0.1);
+  try {
+    const res = await fetch(`${WORKER}/api/stops?b=${[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => x.toFixed(4)).join(',')}`);
+    const d = await res.json();
+    if (Array.isArray(d)) mapStops = d;
+  } catch {}
+}
+let stopMoveTimer = null;
+map.on('moveend', () => {
+  clearTimeout(stopMoveTimer);
+  stopMoveTimer = setTimeout(loadMapStops, 300);
+});
+
+function drawBusStops(size, z) {
+  drawnStops = [];
+  if (z < STOP_ZOOM || !showBuses || !mapStops.length) return;
+  ctx.font = '600 10px "Work Sans", system-ui, sans-serif';
+  for (const st of mapStops) {
+    const pt = toScreen(st.la, st.lo);
+    if (pt.x < -10 || pt.y < -10 || pt.x > size.x + 10 || pt.y > size.y + 10) continue;
+    drawnStops.push([pt.x, pt.y, st.i]);
+    const fav = stopFavs.some((f) => f.i === st.i);
+    // A bus stop sign: white disc with a red ring (gold for your saved stops)
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = fav ? '#d4a64a' : BUS_RED;
+    ctx.stroke();
+    if (z >= 17) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(22,39,32,0.8)';
+      ctx.strokeText(st.n, pt.x + 7, pt.y + 4);
+      ctx.fillStyle = '#f3e9e7';
+      ctx.fillText(st.n, pt.x + 7, pt.y + 4);
+    }
+  }
+}
+
+async function fetchStop(id) {
+  try {
+    const res = await fetch(`${WORKER}/api/stop/${encodeURIComponent(id)}`);
+    const d = await res.json();
+    if (!d.error) stopBoards.set(id, d);
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+const deckShort = (f) => (f && f.deck ? (f.deck.startsWith('Double') ? 'Double decker' : 'Single decker') : '');
+
+function renderStopHeader() {
+  const id = selectedId.slice(5);
+  const d = stopBoards.get(id);
+  const fav = stopFavs.some((f) => f.i === id);
+  dHead.textContent = 'Bus stop';
+  dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>${d ? esc(d.routes.join(', ')) : ''}`;
+  dRoute.textContent = d ? d.name : 'Bus stop';
+  dFrom.textContent = d && d.towards ? `Towards ${d.towards}` : '';
+  dState.innerHTML = `<button class="pill star" id="stopStar" aria-pressed="${fav}">${fav ? '★ Saved stop' : '☆ Save stop'}</button>`;
+  document.getElementById('stopStar').onclick = () => toggleStopFav(id, d ? d.name : id);
+  dFoot.textContent = 'Live times from TfL. Bus details from TfL’s fleet list.';
+  dFoot.classList.add('tiny');
+}
+
+function depRow(r) {
+  const f = r.facts;
+  const about = [deckShort(f), f && f.model, f && f.power].filter(Boolean).map(esc).join(' · ');
+  return `<li class="dep" data-reg="${esc(r.reg)}"><span class="bp-num">${esc(r.route)}</span><span class="dp-main"><b>${esc(r.dest)}</b><small><span class="reg">${esc(r.reg)}</span>${about ? ` ${about}` : ''}</small></span><span class="dp-when"><b>${r.m <= 0 ? 'Due' : `${r.m} min`}</b><small>${esc(r.at)}</small></span></li>`;
+}
+
+async function loadStopBoard() {
+  const id = selectedId.slice(5);
+  const d = await fetchStop(id);
+  if (selectedId !== 'stop:' + id) return;
+  renderStopHeader();
+  if (!d || d.error) {
+    dCalls.innerHTML = `<li class="dep-empty">${esc((d && d.error) || 'Couldn’t get the times for this stop.')}</li>`;
+    return;
+  }
+  dCalls.innerHTML = d.rows.length ? d.rows.map(depRow).join('') : '<li class="dep-empty">No buses due in the next half hour or so.</li>';
+  if (routeLine) routeLine.remove();
+  routeLine = null;
+}
+// Tap a departure: show that bus on the map, if it's there
+dCalls.addEventListener('click', (e) => {
+  const li = e.target.closest('li.dep');
+  if (!li || !isStop(selectedId)) return;
+  const reg = li.dataset.reg;
+  if (buses.has(reg)) {
+    const o = buses.get(reg);
+    select('bus:' + reg);
+    map.setView([o.v.la, o.v.lo], Math.max(map.getZoom(), 15));
+  }
+});
+
+function openStop(id, la, lo) {
+  setTab('map');
+  select('stop:' + id);
+  if (la && lo) map.setView([la, lo], Math.max(map.getZoom(), 16));
+}
+
+function toggleStopFav(id, name) {
+  stopFavs = stopFavs.some((f) => f.i === id) ? stopFavs.filter((f) => f.i !== id) : [...stopFavs, { i: id, n: name }].slice(0, 12);
+  store.set('busStopFavs', stopFavs);
+  if (selectedId === 'stop:' + id) renderStopHeader();
+  renderStopFavs();
+  refreshFavStops();
+}
+
+/** Your saved stops, with their next few buses (Ding Ding panel and Home). */
+function favStopsHtml(per = 3) {
+  return stopFavs
+    .map((f) => {
+      const d = stopBoards.get(f.i);
+      const rows = d ? d.rows.slice(0, per) : [];
+      return `<div class="sf"><button class="sf-head" type="button" data-stop="${esc(f.i)}"><b>${esc(d ? d.name : f.n)}</b>${d && d.towards ? `<small>towards ${esc(d.towards)}</small>` : ''}</button>
+        <ul class="sf-rows">${
+          d ? (rows.length ? rows.map(depRow).join('') : '<li class="dep-empty">Nothing due soon</li>') : '<li class="dep-empty">…</li>'
+        }</ul></div>`;
+    })
+    .join('');
+}
+
+function renderStopFavs() {
+  const el = document.getElementById('busStopFavs');
+  el.innerHTML = stopFavs.length
+    ? favStopsHtml(3)
+    : '<p class="bp-intro">Zoom right in on the map to see bus stops, tap one, then ☆ Save stop. Its next buses show here and on Home.</p>';
+}
+for (const id of ['busStopFavs', 'stopsNear']) {
+  document.getElementById(id).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-stop]');
+    if (b) {
+      const d = stopBoards.get(b.dataset.stop);
+      openStop(b.dataset.stop, d?.la || Number(b.dataset.la), d?.lo || Number(b.dataset.lo));
+    }
+  });
+}
+
+async function refreshFavStops() {
+  clearTimeout(stopTimer);
+  stopTimer = setTimeout(refreshFavStops, 30000);
+  const panelOpen = document.getElementById('busPanel').classList.contains('open');
+  if (DEMO || !stopFavs.length || !(panelOpen || home.isOpen()) || document.visibilityState === 'hidden') return;
+  await Promise.all(stopFavs.map((f) => fetchStop(f.i)));
+  renderStopFavs();
+  home.render();
+}
+
+document.getElementById('stopsNearBtn').onclick = () => {
+  const out = document.getElementById('stopsNear');
+  if (!navigator.geolocation) return (out.innerHTML = '<li class="bp-empty">Location isn’t available on this device.</li>');
+  out.innerHTML = '<li class="bp-empty">Finding stops near you…</li>';
+  navigator.geolocation.getCurrentPosition(
+    async (p) => {
+      try {
+        const res = await fetch(`${WORKER}/api/stops?la=${p.coords.latitude.toFixed(5)}&lo=${p.coords.longitude.toFixed(5)}`);
+        const list = await res.json();
+        out.innerHTML = list.length
+          ? list
+              .map(
+                (st) => `<li><button class="sf-head" type="button" data-stop="${esc(st.i)}" data-la="${st.la}" data-lo="${st.lo}"><b>${esc(st.n)}</b><small>${st.d} m · ${esc(st.r.join(', '))}</small></button></li>`,
+              )
+              .join('')
+          : '<li class="bp-empty">No bus stops within a short walk.</li>';
+      } catch {
+        out.innerHTML = '<li class="bp-empty">Couldn’t look up stops.</li>';
+      }
+    },
+    () => (out.innerHTML = '<li class="bp-empty">Couldn’t find your location.</li>'),
+    { timeout: 8000, maximumAge: 120000 },
+  );
+};
+
+home.addSection(() => {
+  if (!stopFavs.length) return '';
+  return `<section class="h-card"><h3 class="h-head">Your bus stops</h3>${favStopsHtml(2)}</section>`;
+});
+document.getElementById('homeBody').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-stop]');
+  if (b) {
+    const d = stopBoards.get(b.dataset.stop);
+    openStop(b.dataset.stop, d?.la, d?.lo);
+  }
+});
+renderStopFavs();
+refreshFavStops();
+window.addEventListener('choo:home-open', () => refreshFavStops());
+loadMapStops();
 
 window.chooStarted = true;

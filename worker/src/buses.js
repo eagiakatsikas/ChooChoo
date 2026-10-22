@@ -159,9 +159,19 @@ function boxOf(dirs) {
   return [s, w, n, e];
 }
 
+/** Every bus stop on the routes we know: naptanId → { id, name, la, lo, routes: Set } */
+export const stopIndex = new Map();
+
 export function addLine(id, name, raw) {
   const dirs = { outbound: prepDir(raw.outbound), inbound: prepDir(raw.inbound) };
   if (!dirs.outbound && !dirs.inbound) return;
+  for (const dd of Object.values(dirs)) {
+    if (!dd) continue;
+    for (const [sid, sname, la, lo] of dd.stops) {
+      const st = stopIndex.get(sid) || stopIndex.set(sid, { id: sid, name: sname, la, lo, routes: new Set() }).get(sid);
+      st.routes.add(name);
+    }
+  }
   const d = dirs.outbound || dirs.inbound;
   const ends = [d.stops[0][1], d.stops[d.stops.length - 1][1]].map((s) => s.replace(/ \([^)]*\)$/, ''));
   lines.set(id, { id, name, ends, dirs, box: boxOf(dirs) });
@@ -573,4 +583,67 @@ export async function busTo(la, lo, st, now = Date.now()) {
   }
   out.sort((a, b) => (a.atStation ?? 999) - (b.atStation ?? 999));
   return { options: out, ready: true };
+}
+
+
+// ---------- Bus stops: what's due ----------
+
+/** Stops in a (small) box, for drawing on the map. */
+export function stopsIn([s, w, n, e]) {
+  const out = [];
+  if (!(n - s < 0.06 && e - w < 0.1)) return out; // only when zoomed right in
+  for (const st of stopIndex.values()) {
+    if (st.la < s || st.la > n || st.lo < w || st.lo > e) continue;
+    out.push({ i: st.id, n: st.name, la: st.la, lo: st.lo, r: [...st.routes].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) });
+    if (out.length >= 500) break;
+  }
+  return out;
+}
+
+/** The nearest few stops to a point. */
+export function stopsNear(la, lo, count = 6) {
+  const all = [];
+  for (const st of stopIndex.values()) {
+    const d = metres([la, lo], [st.la, st.lo]);
+    if (d < 800) all.push([d, st]);
+  }
+  return all
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, count)
+    .map(([d, st]) => ({ i: st.id, n: st.name, la: st.la, lo: st.lo, d: Math.round(d), r: [...st.routes].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) }));
+}
+
+/** Live departures from one stop, with each bus's registration, deck and model. */
+export async function stopBoard(id, now = Date.now()) {
+  if (!config.tflKey) return { error: 'Needs the TfL key' };
+  const st = stopIndex.get(id);
+  const list = await stopArrivals(id);
+  const rows = list
+    .map((a) => {
+      const t = Date.parse(a.expectedArrival);
+      return {
+        route: a.lineName,
+        id: a.lineId,
+        dest: a.destinationName,
+        t,
+        at: hhmm(t),
+        m: Math.max(0, Math.round((t - now) / 60000)),
+        reg: a.vehicleId,
+        facts: busFacts(a.vehicleId),
+      };
+    })
+    .filter((r) => r.t >= now - 60000)
+    .sort((a, b) => a.t - b.t)
+    .slice(0, 16);
+  const any = list[0];
+  return {
+    id,
+    name: st?.name || any?.stationName || id,
+    towards: any?.towards || '',
+    la: st?.la,
+    lo: st?.lo,
+    routes: st ? [...st.routes].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) : [...new Set(list.map((a) => a.lineName))],
+    rows,
+    at: now,
+  };
 }
