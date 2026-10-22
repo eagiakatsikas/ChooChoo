@@ -496,10 +496,10 @@ button {
   background: #b9b19b;
   border-color: #b9b19b;
 }
-/* The line between the last passed stop and the next one stays pale until the train gets there */
+/* Newest stop at the top: the line below the current stop (towards stops already passed) is pale */
 .calls li.here::after,
 .calls li.next::after {
-  background: linear-gradient(#cfc8b4 50%, #3d4c43 50%);
+  background: linear-gradient(#3d4c43 50%, #cfc8b4 50%);
 }
 /* Where the train is now, or its next stop */
 .calls li.here,

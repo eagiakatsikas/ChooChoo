@@ -424,6 +424,15 @@ const dCalls = document.getElementById('dCalls');
 const dFoot = document.getElementById('dFoot');
 let detailTimer = null;
 let scrolledFor = null;
+let anchoredStop = '';
+let autoScrollAt = 0;
+let userScrolledAt = 0;
+// Scrolls Choo Choo makes itself don't count as the user looking around
+const noteUserScroll = () => {
+  if (Date.now() - autoScrollAt > 800) userScrolledAt = Date.now();
+};
+dCalls.addEventListener('scroll', noteUserScroll, { passive: true });
+document.getElementById('detail').addEventListener('scroll', noteUserScroll, { passive: true });
 
 function delayText(dl) {
   if (dl == null) return '';
@@ -479,14 +488,19 @@ async function loadCalls() {
           s.e && s.e !== s.s ? `exp ${s.e}` : s.pl ? `plat ${s.pl}` : ''
         }</span></li>`,
     )
+    .reverse() // destination at the top, where the train started at the bottom
     .join('');
-  // When a train is first opened, scroll its stop list to where it is now
-  if (scrolledFor !== selectedId) {
-    scrolledFor = selectedId;
-    const cur = dCalls.querySelector('li.here, li.next');
-    const prev = cur && cur.previousElementSibling;
-    dCalls.scrollTop = prev ? prev.offsetTop - dCalls.offsetTop : 0;
+  // Keep the current (or next) stop in view: when a train is opened, whenever it moves
+  // on to another stop, and again a few seconds after you scroll away to look around
+  const cur = dCalls.querySelector('li.here, li.next');
+  const curKey = cur ? cur.textContent : '';
+  const firstOpen = scrolledFor !== selectedId;
+  if (cur && (firstOpen || curKey !== anchoredStop || Date.now() - userScrolledAt > 8000)) {
+    autoScrollAt = Date.now();
+    cur.scrollIntoView({ block: 'center', behavior: firstOpen ? 'auto' : 'smooth' });
   }
+  scrolledFor = selectedId;
+  anchoredStop = curKey;
   if (routeLine) routeLine.remove();
   routeLine = L.polyline(d.path, { color: '#d4a64a', weight: 3, opacity: 0.85, dashArray: '2 7', interactive: false }).addTo(map);
 }
