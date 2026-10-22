@@ -203,7 +203,8 @@ export function createHome(ctx) {
       r.mins != null ? `${r.mins} min` : '',
       r.coaches ? `${r.coaches} coaches` : '',
     ].filter(Boolean);
-    return { html: `<button class="b-row ${r.best ? 'best' : ''} ${r.cancelled ? 'cancelled' : ''}" type="button" ${r.id ? `data-id="${esc(r.id)}"` : ''}>
+    if (r._missed) bits.unshift('Too soon to make');
+    return { html: `<button class="b-row ${r.best ? 'best' : ''} ${r.cancelled ? 'cancelled' : ''} ${r._missed ? 'missed' : ''}" type="button" ${r.id ? `data-id="${esc(r.id)}"` : ''}>
       <span><span class="b-time">${esc(r.std)}</span><span class="b-exp ${cls}">${exp}</span></span>
       <span><span class="b-dest">${esc(r.dest)}${r.best ? '<span class="b-tag">Best</span>' : ''}</span><span class="b-sub">${bits.join(' · ')}</span></span>
       ${plat}
@@ -255,8 +256,21 @@ export function createHome(ctx) {
       if (!d) html += '<p class="b-empty">Checking departures…</p>';
       else if (!d.rows.length) html += `<p class="b-empty">No direct trains in the next two hours.</p>`;
       else {
-        const rows = d.rows.filter((r) => !r.cancelled || r.best).slice(0, 4);
-        const best = d.rows.find((r) => r.best) || rows[0];
+        // Knowing how long it takes you to get there, the train to show is the one that gets
+        // you in soonest among those you can still make (not just the one leaving first)
+        const spare = (r) => {
+          const u = minsUntil(r.etdTime || r.std);
+          return tr && u != null ? u - tr.mins - 2 : null;
+        };
+        const missed = (r) => tr && (spare(r) ?? -1) < 0;
+        let best = d.rows.find((r) => r.best) || d.rows[0];
+        if (tr) {
+          const ok = d.rows.filter((r) => !r.cancelled && !missed(r));
+          if (ok.length) best = ok.reduce((a, b) => ((minsUntil(b.etaTime || b.sta) ?? 9999) < (minsUntil(a.etaTime || a.sta) ?? 9999) ? b : a));
+        }
+        const shown = d.rows.filter((r) => !r.cancelled || r === best);
+        const from = Math.max(0, shown.indexOf(best) - 1); // one you've missed for context, then the rest
+        const rows = shown.slice(from, from + 4).map((r) => ({ ...r, best: r === best, _missed: missed(r) }));
         const top = trainRow(best, walk);
         html += `<div class="h-next">
           <div class="h-big"><span class="h-time">${esc(best.etdTime || best.std)}</span>
@@ -264,7 +278,7 @@ export function createHome(ctx) {
           <div class="h-plat"><b>${esc(best.plat || '–')}</b><small>${best.plat ? (best.platLive ? 'Platform' : 'Planned platform') : 'Platform not yet known'}</small></div>
         </div>
         ${leaveLine(d.rows, best, tr)}
-        ${best.id && ctx.alerts() ? `<button class="h-alert" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${ctx.alerts().has(best.id)}">${ctx.alerts().has(best.id) ? '🔔 Alert on for this train' : `🔔 Alert me about the ${esc(best.std)}`}</button>` : ''}
+        ${best.id && ctx.alerts() ? `<button class="h-alert" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${ctx.alerts().has(best.id)}">${ctx.alerts().has(best.id) ? 'Alert on for this train' : `Alert me about the ${esc(best.std)}`}</button>` : ''}
         <div class="board h-board">${rows.map((r) => trainRow(r, walk).html).join('')}</div>
         <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail.' : 'Timetabled platforms until the station announces them.'} Tap a train to see it on the map.</p>`;
       }

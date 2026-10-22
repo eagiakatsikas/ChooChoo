@@ -12,7 +12,8 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-title" content="Choo Choo" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Not "black-translucent": on iOS 26 that cuts a strip off the bottom of home-screen apps -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -148,7 +149,7 @@
     <section class="panel detail" id="detail" hidden aria-live="polite">
       <div class="panel-head">
         <p class="d-op"><span id="dHeadcode"></span><span id="dOp"></span></p>
-        <button class="d-follow" id="dAlert" type="button" aria-pressed="false">🔔 Alert me</button>
+        <button class="d-follow" id="dAlert" type="button" aria-pressed="false">Alert me</button>
         <button class="d-follow" id="dFollow" type="button" aria-pressed="false">Follow</button>
         <button class="close" id="detailClose" aria-label="Close train details">×</button>
       </div>

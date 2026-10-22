@@ -549,7 +549,7 @@ function renderDetailHeader() {
   if (!ab.hidden) {
     const on = alerts && alerts.has(selectedId);
     ab.setAttribute('aria-pressed', Boolean(on));
-    ab.textContent = on ? '🔔 Alert on' : '🔔 Alert me';
+    ab.textContent = on ? 'Alert on' : 'Alert me';
   }
   if (isBus(selectedId)) return renderBusHeader();
   const v = trains.get(selectedId);
@@ -1221,8 +1221,10 @@ function setBottomGap() {
   const standaloneApp = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const portrait = window.innerHeight > window.innerWidth;
   let gap = 0;
-  if (standaloneApp && portrait) gap = Math.round(window.screen.height - window.innerHeight);
-  if (gap < 0 || gap > 160) gap = 0;
+  // (No longer used to move the nav bar: the cause, a see-through status bar, is gone.
+  // Still measured for the readout below.)
+  const strip = standaloneApp && portrait ? Math.round(window.screen.height - window.innerHeight) : 0;
+  void strip;
   document.documentElement.style.setProperty('--gap', `${gap}px`);
   document.documentElement.classList.toggle('has-gap', gap > 0);
   // ?debug shows the measurements, to check the layout on a phone
@@ -1232,7 +1234,7 @@ function setBottomGap() {
     document.body.appendChild(probe);
     const safeB = Math.round(probe.getBoundingClientRect().height);
     probe.remove();
-    countEl.textContent = `screen ${window.screen.height} · inner ${window.innerHeight} · vv ${Math.round(window.visualViewport?.height || 0)} · gap ${gap} · app ${standaloneApp} · safe ${safeB}`;
+    countEl.textContent = `screen ${window.screen.height} · inner ${window.innerHeight} · vv ${Math.round(window.visualViewport?.height || 0)} · app ${standaloneApp} · safe ${safeB}`;
   }
 }
 setBottomGap();
@@ -1292,7 +1294,7 @@ home.addSection(() => {
   const list = alerts.list();
   if (!list.length) return '';
   return `<section class="h-card"><h3 class="h-head">Your alerts</h3><ul class="al-list">${list
-    .map((x) => `<li><button class="al-go" type="button" data-id="${esc(x.key)}">🔔 ${esc(x.label)}</button></li>`)
+    .map((x) => `<li><button class="al-go" type="button" data-id="${esc(x.key)}">${esc(x.label)}</button></li>`)
     .join('')}</ul></section>`;
 });
 document.getElementById('alertCount').textContent = alerts.list().length || '';

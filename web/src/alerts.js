@@ -126,7 +126,7 @@ export function createAlerts(ctx) {
   function itemsHtml() {
     return list
       .map(
-        (a) => `<li><button class="al-go" type="button" data-show="${esc(a.key)}">🔔 ${esc(a.label)}</button><button class="al-rm" type="button" data-rm="${esc(a.id)}" aria-label="Stop alerts for the ${esc(a.label)}">×</button></li>`,
+        (a) => `<li><button class="al-go" type="button" data-show="${esc(a.key)}">${esc(a.label)}</button><button class="al-rm" type="button" data-rm="${esc(a.id)}" aria-label="Stop alerts for the ${esc(a.label)}">×</button></li>`,
       )
       .join('');
   }
@@ -139,7 +139,7 @@ export function createAlerts(ctx) {
       <h3 class="bp-head">Trains you’re watching</h3>
       ${list.length ? `<ul class="al-list">${itemsHtml()}</ul>` : '<p class="bp-intro">None yet.</p>'}
       <h3 class="bp-head">How it works</h3>
-      <p class="bp-intro">Tap <b>🔔 Alert me</b> on a train (on Home, or after tapping a train on the map). You’ll get a notification when its platform is announced or changes, if it’s running late, and if it’s cancelled. Alerts stop once the train has left.</p>`;
+      <p class="bp-intro">Tap <b>Alert me</b> on a train (on Home, or after tapping a train on the map). You’ll get a notification when its platform is announced or changes, if it’s running late, and if it’s cancelled. Alerts stop once the train has left.</p>`;
   }
 
   bodyEl?.addEventListener('click', (e) => {

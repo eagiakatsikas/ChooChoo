@@ -1325,7 +1325,7 @@ body:not([data-tab='map']) .toggles {
   }
   /* The header no longer holds a button; and sits a touch lower, clear of the iPhone's blur */
   .bar {
-    padding: calc(var(--safe-t) + 26px) 16px 12px;
+    padding: calc(var(--safe-t) + 14px) 16px 12px;
   }
 }
 
@@ -2000,4 +2000,8 @@ body.replaying .toggles {
   font-size: 10px;
   font-weight: 600;
   color: var(--muted);
+}
+/* A train you can't get to the station in time for */
+.b-row.missed {
+  opacity: 0.5;
 }
