@@ -485,8 +485,8 @@ async function loadCalls() {
         `<li class="${s.done ? 'done' : ''} ${s.here ? 'here' : ''} ${i === nextIdx ? 'next' : ''}"><span class="t">${s.s}</span><span class="n">${s.n}${
           s.here ? '<span class="tag">Now</span>' : i === nextIdx ? '<span class="tag">Next</span>' : ''
         }</span><span class="e">${
-          s.e && s.e !== s.s ? `exp ${s.e}` : s.pl ? `plat ${s.pl}` : ''
-        }</span></li>`,
+          s.e && s.e !== s.s ? `<span class="x">exp ${s.e}</span>` : ''
+        }${s.pl ? `<span class="p">plat ${s.pl}</span>` : ''}</span></li>`,
     )
     .reverse() // destination at the top, where the train started at the bottom
     .join('');

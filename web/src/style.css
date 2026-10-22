@@ -533,9 +533,20 @@ button {
   font-variant-numeric: tabular-nums;
 }
 .calls .e {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.25;
   color: #8a5a0c;
+}
+/* With an expected time too, the platform sits beneath it, a little quieter */
+.calls .e .x + .p {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b756d;
 }
 .d-foot {
   margin: 12px 0 0;
