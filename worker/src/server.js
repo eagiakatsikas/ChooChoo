@@ -5,6 +5,7 @@ import { trains, view, detail, cleanup, stats } from './trains.js';
 import { sched } from './schedule.js';
 import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
+import { board, stationList, ldbState } from './board.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -73,6 +74,7 @@ export function startServer() {
         scheduleLoadedAt: sched.loadedAt,
         tracks: { ...tracks, queued: queueLength() },
         memoryMB: Math.round(process.memoryUsage().rss / 1e6),
+        nationalRail: { ...ldbState, configured: Boolean(config.ldbKey) },
         stats,
         clients: clients.size,
       });
@@ -80,6 +82,17 @@ export function startServer() {
     if (url.pathname === '/api/trains') {
       const now = Date.now();
       return json(res, 200, { now, trains: [...snapshot(now).values()] });
+    }
+    if (url.pathname === '/api/stations') {
+      cors(res);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(stationList());
+    }
+    if (url.pathname === '/api/board') {
+      board(url.searchParams.get('from'), url.searchParams.get('to'))
+        .then((d) => json(res, d.error ? 400 : 200, d))
+        .catch((err) => json(res, 500, { error: err.message }));
+      return;
     }
     if (url.pathname === '/api/paths') {
       // Track routes for the map: ?k=KEY1,KEY2 (keys as sent in train views)

@@ -12,6 +12,10 @@ export const ref = {
   smart: new Map(),
   /** tiplocs inside the London box */
   london: new Set(),
+  /** CRS code → { crs, name, lat, lng, tiplocs: Set } for passenger stations */
+  stations: new Map(),
+  /** tiploc → CRS code */
+  tiplocCrs: new Map(),
 };
 
 export function normStanox(s) {
@@ -142,8 +146,20 @@ export function finaliseTiplocs() {
       borrowed++;
     }
   }
+  // Passenger stations: CRS codes that have a known location (from NaPTAN)
+  ref.stations.clear();
+  ref.tiplocCrs.clear();
+  for (const t of pendingTiplocs) {
+    if (!t._crs) continue;
+    const c = byCrs.get(t._crs);
+    if (!c) continue;
+    let st = ref.stations.get(t._crs);
+    if (!st) ref.stations.set(t._crs, (st = { crs: t._crs, name: c.name, lat: c.lat, lng: c.lng, tiplocs: new Set() }));
+    st.tiplocs.add(t._tiploc);
+    ref.tiplocCrs.set(t._tiploc, t._crs);
+  }
   pendingTiplocs.length = 0;
-  console.log(`[ref] ${borrowed} extra TIPLOCs mapped via CRS/STANOX`);
+  console.log(`[ref] ${borrowed} extra TIPLOCs mapped via CRS/STANOX; ${ref.stations.size} stations`);
 }
 
 export function computeLondon(box) {

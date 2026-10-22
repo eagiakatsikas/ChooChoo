@@ -29,6 +29,7 @@
         <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
       </p>
       <p class="count" id="count"></p>
+      <button class="finder-open" id="finderOpen" aria-controls="finder" aria-expanded="false">Find a train</button>
     </header>
 
     <div class="basemap-switch" role="group" aria-label="Map style">
@@ -62,6 +63,33 @@
         <span style="--c: #e07f63">15+ min late</span>
       </p>
     </aside>
+
+    <section class="panel finder" id="finder" hidden aria-label="Find a train">
+      <div class="panel-head">
+        <h2>Find a train</h2>
+        <button class="close" id="finderClose" aria-label="Close train finder">×</button>
+      </div>
+      <div class="f-route">
+        <div class="f-field">
+          <label for="fFrom">From</label>
+          <input id="fFrom" type="text" placeholder="Your station" autocomplete="off" spellcheck="false" />
+          <button class="f-icon" id="fLocate" type="button" aria-label="Use my location">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          </button>
+        </div>
+        <div class="f-field">
+          <label for="fTo">To</label>
+          <input id="fTo" type="text" placeholder="Where to?" autocomplete="off" spellcheck="false" />
+          <button class="f-icon" id="fSwap" type="button" aria-label="Swap From and To">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/></svg>
+          </button>
+        </div>
+        <ul class="f-suggest" id="fSuggest" role="listbox" aria-label="Stations" hidden></ul>
+      </div>
+      <p class="f-note" id="fNote" role="status"></p>
+      <div class="f-favs" id="fFavs" aria-label="Saved routes"></div>
+      <div class="board" id="fBoard" aria-live="polite"></div>
+    </section>
 
     <section class="panel detail" id="detail" hidden aria-live="polite">
       <div class="panel-head">

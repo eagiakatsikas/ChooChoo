@@ -494,6 +494,7 @@ async function loadCalls() {
 function select(id) {
   selectedId = id;
   detailEl.hidden = false;
+  if (!finderEl.hidden) setFinderOpen(false);
   dCalls.innerHTML = '';
   if (window.matchMedia('(max-width: 899px)').matches) setFiltersOpen(false);
   renderDetailHeader();
@@ -570,5 +571,409 @@ function connect() {
 
 // Re-render "x seconds ago" text
 setInterval(() => selectedId && renderDetailHeader(), 5000);
+
+// ---------- Train finder: nearest station → destination → departures board ----------
+const finderEl = document.getElementById('finder');
+const finderBtn = document.getElementById('finderOpen');
+const fFrom = document.getElementById('fFrom');
+const fTo = document.getElementById('fTo');
+const fSuggest = document.getElementById('fSuggest');
+const fNote = document.getElementById('fNote');
+const fFavs = document.getElementById('fFavs');
+const fBoard = document.getElementById('fBoard');
+const fLocate = document.getElementById('fLocate');
+
+let stations = null; // [{c, n, la, lo}]
+let stationsLoading = null;
+const route = { from: store.get('fFrom', null), to: store.get('fTo', null) }; // CRS codes
+let favs = store.get('favs', []); // [{f, t}]
+let boardTimer = null;
+let located = false;
+
+const byCrs = (c) => stations && stations.find((s) => s.c === c);
+const short = (name) => name.replace(/^London /, '');
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+
+function loadStations() {
+  if (stations) return Promise.resolve(stations);
+  if (!stationsLoading) {
+    stationsLoading = fetch(`${WORKER}/api/stations`)
+      .then((r) => r.json())
+      .then((list) => (stations = list))
+      .catch(() => {
+        stationsLoading = null;
+        throw new Error('stations');
+      });
+  }
+  return stationsLoading;
+}
+
+function search(q) {
+  q = q.trim().toLowerCase();
+  if (!q || !stations) return [];
+  const out = [];
+  for (const s of stations) {
+    const n = s.n.toLowerCase();
+    const bare = n.replace(/^london /, '');
+    let score = -1;
+    if (s.c.toLowerCase() === q) score = 0;
+    else if (bare.startsWith(q) || n.startsWith(q)) score = 1;
+    else if (n.split(/[\s(-]+/).some((w) => w.startsWith(q))) score = 2;
+    else if (n.includes(q)) score = 3;
+    if (score >= 0) out.push([score, n.length, s]);
+  }
+  out.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return out.slice(0, 8).map((x) => x[2]);
+}
+
+function metresTo(la, lo, s) {
+  const x = (s.lo - lo) * Math.cos((la * Math.PI) / 180) * 111320;
+  const y = (s.la - la) * 110574;
+  return Math.hypot(x, y);
+}
+
+function nearest(la, lo) {
+  let best = null;
+  let bestD = Infinity;
+  for (const s of stations) {
+    const d = metresTo(la, lo, s);
+    if (d < bestD) {
+      best = s;
+      bestD = d;
+    }
+  }
+  return best && { s: best, d: bestD };
+}
+
+function fmtDist(m) {
+  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+}
+
+function setNote(text) {
+  fNote.textContent = text || '';
+}
+
+function setStation(which, crs) {
+  route[which] = crs;
+  store.set(which === 'from' ? 'fFrom' : 'fTo', crs);
+  const s = byCrs(crs);
+  (which === 'from' ? fFrom : fTo).value = s ? s.n : '';
+  renderFavs();
+  loadBoard();
+}
+
+function locate() {
+  if (!navigator.geolocation) {
+    setNote('Location isn’t available on this device. Type your station instead.');
+    fFrom.focus();
+    return;
+  }
+  fLocate.classList.add('busy');
+  setNote('Finding your nearest station…');
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      fLocate.classList.remove('busy');
+      try {
+        await loadStations();
+      } catch {
+        setNote('Couldn’t load the station list. Check your connection and try again.');
+        return;
+      }
+      const n = nearest(pos.coords.latitude, pos.coords.longitude);
+      if (!n) return;
+      located = true;
+      setStation('from', n.s.c);
+      setNote(
+        n.d > 2500
+          ? `Nearest station is ${n.s.n}, ${fmtDist(n.d)} away. Change it if you’re going from somewhere else.`
+          : `Nearest station: ${n.s.n} (${fmtDist(n.d)})`,
+      );
+      if (!route.to) fTo.focus();
+    },
+    (err) => {
+      fLocate.classList.remove('busy');
+      setNote(
+        err.code === 1
+          ? 'Location is turned off for this site. Type your station instead.'
+          : 'Couldn’t find your location. Type your station instead.',
+      );
+      fFrom.focus();
+    },
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 },
+  );
+}
+
+// ----- Station suggestions -----
+let suggestFor = null;
+let suggestItems = [];
+let suggestIdx = -1;
+
+function showSuggest(input) {
+  const items = search(input.value);
+  suggestFor = input;
+  suggestItems = items;
+  suggestIdx = items.length ? 0 : -1;
+  if (!items.length) {
+    fSuggest.hidden = true;
+    return;
+  }
+  const field = input.closest('.f-field');
+  fSuggest.style.top = `${field.offsetTop + field.offsetHeight + 4}px`;
+  fSuggest.innerHTML = items
+    .map(
+      (s, i) =>
+        `<li role="option" id="sug-${i}" aria-selected="${i === suggestIdx}" data-crs="${s.c}"><span>${esc(s.n)}</span><span class="crs">${s.c}</span></li>`,
+    )
+    .join('');
+  fSuggest.hidden = false;
+  input.setAttribute('aria-activedescendant', 'sug-0');
+}
+
+function hideSuggest() {
+  fSuggest.hidden = true;
+  suggestFor = null;
+}
+
+function pickSuggestion(i) {
+  const s = suggestItems[i];
+  if (!s || !suggestFor) return;
+  const which = suggestFor === fFrom ? 'from' : 'to';
+  hideSuggest();
+  setStation(which, s.c);
+  if (which === 'from') setNote('');
+  if (which === 'from' && !route.to) fTo.focus();
+  else (which === 'from' ? fFrom : fTo).blur();
+}
+
+for (const input of [fFrom, fTo]) {
+  input.addEventListener('input', async () => {
+    try {
+      await loadStations();
+    } catch {
+      setNote('Couldn’t load the station list. Check your connection and try again.');
+      return;
+    }
+    showSuggest(input);
+  });
+  input.addEventListener('focus', () => input.select());
+  input.addEventListener('keydown', (e) => {
+    if (fSuggest.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      suggestIdx = (suggestIdx + (e.key === 'ArrowDown' ? 1 : -1) + suggestItems.length) % suggestItems.length;
+      [...fSuggest.children].forEach((li, i) => li.setAttribute('aria-selected', i === suggestIdx));
+      input.setAttribute('aria-activedescendant', `sug-${suggestIdx}`);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      pickSuggestion(Math.max(0, suggestIdx));
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      hideSuggest();
+    }
+  });
+  input.addEventListener('blur', () =>
+    setTimeout(() => {
+      if (document.activeElement !== fFrom && document.activeElement !== fTo) {
+        hideSuggest();
+        // Put back the chosen station's name if the text was left half-typed
+        fFrom.value = byCrs(route.from)?.n || '';
+        fTo.value = byCrs(route.to)?.n || '';
+      }
+    }, 150),
+  );
+}
+fSuggest.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the input
+fSuggest.addEventListener('click', (e) => {
+  const li = e.target.closest('li');
+  if (li) pickSuggestion([...fSuggest.children].indexOf(li));
+});
+
+fLocate.onclick = locate;
+document.getElementById('fSwap').onclick = () => {
+  const { from, to } = route;
+  route.from = to;
+  route.to = from;
+  store.set('fFrom', route.from);
+  store.set('fTo', route.to);
+  fFrom.value = byCrs(route.from)?.n || '';
+  fTo.value = byCrs(route.to)?.n || '';
+  setNote('');
+  renderFavs();
+  loadBoard();
+};
+
+// ----- Favourite routes (kept on this device) -----
+const isFav = () => favs.some((f) => f.f === route.from && f.t === route.to);
+
+function renderFavs() {
+  if (!stations) return;
+  fFavs.innerHTML = favs
+    .map((f, i) => {
+      const a = byCrs(f.f);
+      const b = byCrs(f.t);
+      if (!a || !b) return '';
+      const on = f.f === route.from && f.t === route.to;
+      return `<span class="fav ${on ? 'on' : ''}"><button data-i="${i}" aria-pressed="${on}">${esc(short(a.n))} → ${esc(short(b.n))}</button><button class="rm" data-rm="${i}" aria-label="Remove saved route ${esc(short(a.n))} to ${esc(short(b.n))}">×</button></span>`;
+    })
+    .join('');
+}
+fFavs.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.rm != null) {
+    favs.splice(Number(b.dataset.rm), 1);
+    store.set('favs', favs);
+    renderFavs();
+    renderBoardHead();
+    return;
+  }
+  const f = favs[Number(b.dataset.i)];
+  if (!f) return;
+  route.from = f.f;
+  route.to = f.t;
+  store.set('fFrom', f.f);
+  store.set('fTo', f.t);
+  fFrom.value = byCrs(f.f)?.n || '';
+  fTo.value = byCrs(f.t)?.n || '';
+  setNote('');
+  renderFavs();
+  loadBoard();
+});
+
+function toggleFav() {
+  if (!route.from || !route.to) return;
+  if (isFav()) favs = favs.filter((f) => !(f.f === route.from && f.t === route.to));
+  else favs = [{ f: route.from, t: route.to }, ...favs].slice(0, 8);
+  store.set('favs', favs);
+  renderFavs();
+  renderBoardHead();
+}
+
+// ----- The board -----
+let lastBoard = null;
+
+function renderBoardHead() {
+  const btn = fBoard.querySelector('.b-save');
+  if (btn) {
+    const on = isFav();
+    btn.setAttribute('aria-pressed', on);
+    btn.textContent = on ? '★ Saved' : '☆ Save route';
+  }
+}
+
+function expText(r) {
+  if (r.cancelled) return ['Cancelled', 'cancel'];
+  if (r.etdTime && r.etdTime !== r.std) return [`Exp ${r.etdTime}`, 'late'];
+  if (/delay/i.test(r.etd || '')) return ['Delayed', 'late'];
+  return ['On time', ''];
+}
+
+function renderBoard(d) {
+  lastBoard = d;
+  const head = `<div class="b-head"><div class="b-title">${esc(short(d.to.name))}<small>Direct trains from ${esc(d.from.name)} · updated ${d.generated}</small></div><button class="b-save" type="button"></button></div>`;
+  let body;
+  if (!d.rows.length) {
+    body = `<p class="b-empty">No direct trains to ${esc(d.to.name)} in the next two hours. You may need to change trains.</p>`;
+  } else {
+    body = d.rows
+      .map((r) => {
+        const [exp, cls] = expText(r);
+        const arr = r.cancelled ? '' : r.etaTime || r.sta;
+        const bits = [
+          arr ? `Arrives ${arr}` : '',
+          r.mins != null && !r.cancelled ? `${r.mins} min` : '',
+          r.stops != null ? (r.stops === 0 ? 'non-stop' : `${r.stops} stop${r.stops === 1 ? '' : 's'}`) : '',
+          r.op ? esc(r.op) : '',
+        ].filter(Boolean);
+        const plat = r.plat
+          ? `<span class="b-plat ${r.platLive ? '' : 'planned'}"><b>${esc(r.plat)}</b><small>${r.platLive ? 'Platform' : 'Planned'}</small></span>`
+          : `<span class="b-plat planned"><b>–</b><small>Platform</small></span>`;
+        return `<button class="b-row ${r.best ? 'best' : ''} ${r.cancelled ? 'cancelled' : ''}" type="button" ${r.id ? `data-id="${esc(r.id)}"` : ''}>
+          <span><span class="b-time">${esc(r.std)}</span><span class="b-exp ${cls}">${exp}</span></span>
+          <span><span class="b-dest">${esc(r.dest)}${r.best ? '<span class="b-tag">Best</span>' : ''}</span><span class="b-sub">${bits.join(' · ')}</span></span>
+          ${plat}
+        </button>`;
+      })
+      .join('');
+  }
+  const foot =
+    d.source === 'national-rail'
+      ? '<p class="b-foot">Live times and platforms from National Rail. Tap a train to see it on the map.</p>'
+      : '<p class="b-foot">Timetabled platforms shown until the station announces them. Tap a train to see it on the map.</p>';
+  fBoard.innerHTML = head + body + foot;
+  fBoard.querySelector('.b-save').onclick = toggleFav;
+  renderBoardHead();
+}
+
+async function loadBoard() {
+  clearInterval(boardTimer);
+  if (!route.from || !route.to) {
+    fBoard.innerHTML = '';
+    return;
+  }
+  if (route.from === route.to) {
+    fBoard.innerHTML = '<p class="b-empty">Choose two different stations.</p>';
+    return;
+  }
+  const key = `${route.from}|${route.to}`;
+  if (!lastBoard || `${lastBoard.from.crs}|${lastBoard.to.crs}` !== key) {
+    fBoard.innerHTML = '<p class="b-empty">Checking departures…</p>';
+  }
+  try {
+    const res = await fetch(`${WORKER}/api/board?from=${route.from}&to=${route.to}`);
+    const d = await res.json();
+    if (`${route.from}|${route.to}` !== key) return; // changed meanwhile
+    if (d.error) fBoard.innerHTML = `<p class="b-empty">${esc(d.error)}.</p>`;
+    else renderBoard(d);
+  } catch {
+    fBoard.innerHTML = '<p class="b-empty">Couldn’t reach the departures service. It will try again shortly.</p>';
+  }
+  boardTimer = setInterval(() => !finderEl.hidden && loadBoard(), 30000);
+}
+
+fBoard.addEventListener('click', (e) => {
+  const row = e.target.closest('.b-row');
+  if (!row) return;
+  const id = row.dataset.id;
+  const v = id && trains.get(id);
+  if (!v) {
+    setNote('That train isn’t on the map yet. It appears shortly before it’s due to leave.');
+    return;
+  }
+  setFinderOpen(false);
+  select(id);
+  const p = position(v, now());
+  if (p) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14));
+});
+
+async function setFinderOpen(open) {
+  finderEl.hidden = !open;
+  finderBtn.setAttribute('aria-expanded', open);
+  if (!open) {
+    clearInterval(boardTimer);
+    hideSuggest();
+    return;
+  }
+  closeDetail();
+  if (window.matchMedia('(max-width: 899px)').matches) setFiltersOpen(false);
+  else if (filtersEl.classList.contains('open')) setFiltersOpen(false);
+  try {
+    await loadStations();
+  } catch {
+    setNote('Couldn’t load the station list. Check your connection and try again.');
+    return;
+  }
+  fFrom.value = byCrs(route.from)?.n || '';
+  fTo.value = byCrs(route.to)?.n || '';
+  renderFavs();
+  // Work out where you are each time the finder opens (once per visit)
+  if (!located) locate();
+  loadBoard();
+}
+finderBtn.onclick = () => setFinderOpen(finderEl.hidden);
+document.getElementById('finderClose').onclick = () => setFinderOpen(false);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !finderEl.hidden && fSuggest.hidden) setFinderOpen(false);
+});
 
 window.chooStarted = true;

@@ -39,6 +39,11 @@ export const config = {
   overpassUrls: (env.OVERPASS_URLS ||
     'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter').split(','),
 
+  // National Rail Live Departure Boards (Rail Data Marketplace). Optional: without a key the
+  // train finder uses the timetable plus live running data, with planned platforms only.
+  ldbKey: env.LDB_API_KEY || '',
+  ldbUrl: (env.LDB_URL || 'https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120').replace(/\/$/, ''),
+
   // Where downloaded reference files are cached
   dataDir: env.DATA_DIR || './data',
 

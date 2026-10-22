@@ -672,3 +672,343 @@ body::before {
   background: var(--slate);
   pointer-events: none;
 }
+
+/* ---------- Train finder ---------- */
+.finder-open {
+  margin-left: auto;
+  align-self: center;
+  padding: 7px 14px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  background: transparent;
+  color: var(--amber);
+  font-weight: 600;
+  font-size: 14px;
+}
+.finder-open[aria-expanded='true'] {
+  background: var(--amber);
+  color: var(--berth);
+}
+.finder {
+  right: 12px;
+  top: calc(12px + var(--safe-t));
+  width: 400px;
+  max-height: calc(100vh - 24px - var(--safe-t));
+  padding: 14px 16px 16px;
+}
+.finder:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+.f-route {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+.f-field {
+  display: grid;
+  grid-template-columns: 52px 1fr 44px;
+  align-items: center;
+  background: var(--berth);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+}
+.f-field:focus-within {
+  border-color: var(--amber);
+}
+.f-field label {
+  padding-left: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.f-field input {
+  min-width: 0;
+  padding: 12px 4px;
+  border: 0;
+  background: transparent;
+  font-size: 16px; /* 16px stops iPhones zooming in on focus */
+  font-weight: 600;
+  outline: none;
+}
+.f-field input::placeholder {
+  color: #7f8c83;
+  font-weight: 400;
+}
+.f-icon {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--amber);
+  display: grid;
+  place-items: center;
+}
+.f-icon.busy svg {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .f-icon.busy svg {
+    animation: none;
+  }
+}
+.f-suggest {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--slate-2);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+.f-suggest li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.f-suggest li[aria-selected='true'],
+.f-suggest li:hover {
+  background: #2f4a3d;
+}
+.f-suggest .crs {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.f-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.f-note:empty {
+  display: none;
+}
+.f-favs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.f-favs:empty {
+  display: none;
+}
+.fav {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--slate-2);
+  font-size: 13px;
+}
+.fav button {
+  border: 0;
+  background: none;
+  padding: 7px 4px 6px 12px;
+  font-weight: 600;
+}
+.fav button.rm {
+  padding: 7px 10px 6px 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.fav.on {
+  border-color: var(--amber);
+}
+
+/* The departures board itself: dark board, gilt lettering, like a station screen */
+.board {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--berth);
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+}
+.board:empty {
+  display: none;
+}
+.b-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  background: var(--berth);
+  border-bottom: 1px solid var(--rule);
+}
+.b-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--amber);
+  line-height: 1.1;
+}
+.b-title small {
+  display: block;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.b-save {
+  flex: none;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  padding: 6px 12px 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.b-save[aria-pressed='true'] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.b-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 48px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid #22362c;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+}
+.b-row:last-child {
+  border-bottom: 0;
+}
+.b-row[data-id]:hover {
+  background: #17291f;
+}
+.b-row.best {
+  background: #1d3227;
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+.b-time {
+  font-family: var(--display);
+  font-size: 23px;
+  font-weight: 800;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.b-exp {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--live);
+}
+.b-exp.late {
+  color: #f0c060;
+}
+.b-exp.cancel {
+  color: #f08f73;
+}
+.b-dest {
+  font-weight: 600;
+  font-size: 15px;
+}
+.b-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px 0;
+  border-radius: 999px;
+  background: var(--amber);
+  color: var(--berth);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+.b-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.b-plat {
+  text-align: center;
+  line-height: 1;
+}
+.b-plat b {
+  display: block;
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.b-plat small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.b-plat.planned b {
+  color: var(--muted);
+}
+.b-row.cancelled .b-time,
+.b-row.cancelled .b-dest {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.b-empty,
+.b-foot {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.b-foot {
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+}
+
+@media (max-width: 899px) {
+  /* Keep the button on the title's line so the header stays one row tall */
+  .bar {
+    padding-right: 136px;
+  }
+  .finder-open {
+    position: absolute;
+    right: 14px;
+    top: calc(var(--safe-t) + 22px);
+    margin: 0;
+    padding: 7px 12px 6px;
+    font-size: 13px;
+  }
+  .panel.finder {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    max-height: 82vh;
+    max-height: 82dvh;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    padding: 14px 14px calc(12px + var(--safe-b));
+  }
+}

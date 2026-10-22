@@ -84,6 +84,12 @@ Redeploy. The status lamp turns green and reads **Live**.
 
 Handy overrides: `?demo` forces demo mode; `?worker=https://…` tries a different worker without redeploying.
 
+## Train finder
+
+Tap **Find a train**: it picks your nearest station (or type one), you choose where you're going, and it shows the next direct trains as a departures board, with the best one (earliest arrival) marked. Save routes you use often; they're kept on that phone or computer.
+
+For live platforms and expected times, add a free National Rail key: register at https://raildata.org.uk, subscribe to the **Live Departure Board** product, copy its *Consumer key*, then on the server add `LDB_API_KEY=<key>` to `/etc/choochoo.env` and run `sudo systemctl restart choochoo`. Without a key the board uses the timetable and Choo Choo's own live data, with planned platforms.
+
 ## Worker API
 
 | Endpoint | What it returns |
@@ -91,6 +97,8 @@ Handy overrides: `?demo` forces demo mode; `?worker=https://…` tries a differe
 | `GET /api/stream` | Server-Sent Events: a `snapshot`, then `delta` updates every 2 s |
 | `GET /api/trains` | Current snapshot as JSON |
 | `GET /api/train/:id` | Calling points and route line for one train |
+| `GET /api/stations` | All stations (CRS code, name, location) |
+| `GET /api/board?from=WAT&to=RAY` | Direct departures from one station to another |
 | `GET /api/status` | Feed connection, counts, message stats |
 
 ## Things to know
