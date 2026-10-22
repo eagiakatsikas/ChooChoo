@@ -34,8 +34,9 @@ export const config = {
 
   // Area where trains follow real track geometry (OpenStreetMap). Outside it they
   // move in straight lines between stations. south,west,north,east
-  // Default: the London commuter belt — Brighton to Milton Keynes/Cambridge, Basingstoke/Reading to Southend/Ashford.
-  trackBox: bbox(env.TRACK_BBOX || '50.78,-1.18,52.26,0.98'),
+  // Default: the London commuter belt — Brighton to Milton Keynes/Cambridge, Basingstoke/Reading to
+  // Southend/Ashford — plus High Speed 1 all the way to the Channel Tunnel (for Eurostar).
+  trackBox: bbox(env.TRACK_BBOX || '50.78,-1.18,52.26,1.25'),
   overpassUrls: (env.OVERPASS_URLS ||
     'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter').split(','),
 

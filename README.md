@@ -23,7 +23,7 @@ Network Rail feeds ──STOMP──▶ worker ──Server-Sent Events──▶
 - **Positions:** the Train Describer (TD) feed reports trains as they step between signal berths, usually within seconds. Network Rail's SMART data maps those steps to station arrivals and departures. TRUST movement reports fill gaps. Between stations, trains are moved along the line using their timetabled running time, adjusted for delay, and held just short of the next station until they're reported there.
 - **Station locations** come from NaPTAN (DfT open data).
 
-Across the London commuter belt (roughly Brighton to Milton Keynes and Cambridge, Reading/Basingstoke to Southend/Ashford), trains follow the real track: the worker downloads the railway lines from OpenStreetMap (via the Overpass API) once a week and works out the route between each pair of stations. Further out they move in straight lines between stations.
+Across the London commuter belt (roughly Brighton to Milton Keynes and Cambridge, Reading/Basingstoke to Southend/Ashford, plus High Speed 1 to the Channel Tunnel), trains follow the real track: the worker downloads the railway lines from OpenStreetMap (via the Overpass API) once a week and works out the route between each pair of stations. Further out they move in straight lines between stations.
 
 ## 1. Deploy the map to Vercel (5 minutes)
 
@@ -90,6 +90,12 @@ Tap **Find a train**: it picks your nearest station (or type one), you choose wh
 
 For live platforms and expected times, add a free National Rail key: register at https://raildata.org.uk, subscribe to the **Live Departure Board** product, copy its *Consumer key*, then on the server add `LDB_API_KEY=<key>` to `/etc/choochoo.env` and run `sudo systemctl restart choochoo`. Without a key the board uses the timetable and Choo Choo's own live data, with planned platforms.
 
+## Ding Ding (buses)
+
+London buses, from TfL's open data. TfL doesn't publish bus GPS positions, so each bus is placed on its route between its last stop and the next, using its predicted arrival time and a speed worked out from its own predictions (so it slows down in traffic). Your saved routes show at any zoom; zoom in to see every bus in view.
+
+Get a free key at https://api-portal.tfl.gov.uk (subscribe to the 500 requests a minute plan, copy the primary key), then on the server add `TFL_APP_KEY=<key>` to `/etc/choochoo.env` and run `sudo systemctl restart choochoo`. The first start downloads every bus route (a few minutes); after that they're kept on disk and refreshed weekly. Live predictions are only fetched for routes someone is looking at.
+
 ## Worker API
 
 | Endpoint | What it returns |
@@ -99,6 +105,9 @@ For live platforms and expected times, add a free National Rail key: register at
 | `GET /api/train/:id` | Calling points and route line for one train |
 | `GET /api/stations` | All stations (CRS code, name, location) |
 | `GET /api/board?from=WAT&to=RAY` | Direct departures from one station to another |
+| `GET /api/buses?r=93,57&b=s,w,n,e` | Buses on those routes, plus every bus in the box |
+| `GET /api/bus/:id` | One bus: next stops and route line |
+| `GET /api/busroutes` | All bus routes (number and ends) |
 | `GET /api/status` | Feed connection, counts, message stats |
 
 ## Things to know
@@ -109,4 +118,4 @@ For live platforms and expected times, add a free National Rail key: register at
 - **Tests:** `cd worker && npm test` runs the position logic against sample feed messages.
 - **Street maps** (Map and Dark) come from OpenFreeMap: free, no API key and no usage limits.
 - **Satellite view** uses Esri World Imagery, which is free for personal and non-commercial use with attribution (shown on the map). If you ever make this a commercial product, you'd need an Esri account or a different imagery provider.
-- Network Rail data © Network Rail Infrastructure Ltd, Open Government Licence. Street map © OpenStreetMap contributors (free tiles, fine for personal use; a busy public app should switch to a paid tile provider). Imagery and satellite labels © Esri, Maxar, Earthstar Geographics.
+- Network Rail data © Network Rail Infrastructure Ltd, Open Government Licence. Street map © OpenStreetMap contributors (free tiles, fine for personal use; a busy public app should switch to a paid tile provider). Imagery and satellite labels © Esri, Maxar, Earthstar Geographics. Bus data: Powered by TfL Open Data (contains OS data © Crown copyright and database rights).
