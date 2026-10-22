@@ -23,7 +23,7 @@ Network Rail feeds ──STOMP──▶ worker ──Server-Sent Events──▶
 - **Positions:** the Train Describer (TD) feed reports trains as they step between signal berths, usually within seconds. Network Rail's SMART data maps those steps to station arrivals and departures. TRUST movement reports fill gaps. Between stations, trains are moved along the line using their timetabled running time, adjusted for delay, and held just short of the next station until they're reported there.
 - **Station locations** come from NaPTAN (DfT open data).
 
-Trains move in straight lines between stations rather than following the track. Good enough at city zoom; noticeable on curves.
+Within about 30 km of central London, trains follow the real track: the worker downloads the railway lines from OpenStreetMap (via the Overpass API) once a week and works out the route between each pair of stations. Further out they move in straight lines between stations.
 
 ## 1. Deploy the map to Vercel (5 minutes)
 
@@ -70,7 +70,7 @@ Fly.io works too: `cd worker && fly launch` then `fly secrets set NR_USERNAME=�
 4. Wait about 10 minutes for setup to finish. The worker's address is `https://<your-ip-with-dashes>.sslip.io`, e.g. IP `132.145.10.20` → `https://132-145-10-20.sslip.io`. Check `https://…/api/status`.
 5. Put that address in Vercel as `VITE_WORKER_URL` and redeploy.
 
-To add or change your Network Rail login later: `ssh -i <your-key> ubuntu@<ip>`, then `sudo nano /etc/choochoo.env`, then `sudo systemctl restart choochoo`. To update the worker to the latest code, run `sudo bash /opt/choochoo/app/deploy/oracle-setup.sh` on the server (your settings are kept). Logs: `journalctl -u choochoo -f`.
+To add or change your Network Rail login later: `ssh -i <your-key> ubuntu@<ip>`, then `sudo nano /etc/choochoo.env`, then `sudo systemctl restart choochoo`. To update the worker to the latest code, run `sudo bash /opt/choochoo/app/deploy/update.sh` on the server (your settings are kept). Logs: `journalctl -u choochoo -f`.
 
 ## 4. Point the map at the worker
 
@@ -99,5 +99,6 @@ Handy overrides: `?demo` forces demo mode; `?worker=https://…` tries a differe
 - **After a restart** it picks up trains already running from their next reported movement, so the map fills in over a few minutes.
 - **Coverage:** TD covers almost all of London, but a few areas only report via TRUST, so trains there update less often.
 - **Tests:** `cd worker && npm test` runs the position logic against sample feed messages.
+- **Street maps** (Map and Dark) come from OpenFreeMap: free, no API key and no usage limits.
 - **Satellite view** uses Esri World Imagery, which is free for personal and non-commercial use with attribution (shown on the map). If you ever make this a commercial product, you'd need an Esri account or a different imagery provider.
 - Network Rail data © Network Rail Infrastructure Ltd, Open Government Licence. Street map © OpenStreetMap contributors (free tiles, fine for personal use; a busy public app should switch to a paid tile provider). Imagery and satellite labels © Esri, Maxar, Earthstar Geographics.

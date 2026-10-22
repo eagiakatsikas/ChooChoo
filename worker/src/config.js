@@ -32,6 +32,12 @@ export const config = {
   // Default ≈ Greater London.
   londonBox: bbox(env.LONDON_BBOX || '51.28,-0.52,51.70,0.34'),
 
+  // Area where trains follow real track geometry (OpenStreetMap). Outside it they
+  // move in straight lines between stations. south,west,north,east
+  trackBox: bbox(env.TRACK_BBOX || '51.13,-0.78,51.86,0.56'),
+  overpassUrls: (env.OVERPASS_URLS ||
+    'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter').split(','),
+
   // Where downloaded reference files are cached
   dataDir: env.DATA_DIR || './data',
 

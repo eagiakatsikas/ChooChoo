@@ -3,6 +3,7 @@ import { ref, tiplocsForStanox, locName } from './reference.js';
 import { sched, runEpoch, timeIn, timeOut } from './schedule.js';
 import { normaliseLiveTs, hhmm } from './time.js';
 import { operatorName } from './operators.js';
+import { pathFor, pathPoints, stationPoint } from './tracks.js';
 
 /** runKey → train */
 export const trains = new Map();
@@ -284,25 +285,26 @@ export function view(t, now = Date.now()) {
     if (now < t.lastTime - 10 * 60000) return null;
     const k = a >= 0 ? a : b;
     if (k < 0) return null;
-    const c = ref.coords.get(locs[k].t);
+    const c = stationPoint(locs[k].t, ref.coords.get(locs[k].t));
     v.st = 'wait';
     v.p = [r5(c.lat), r5(c.lng)];
     v.at = locName(locs[k].t);
   } else if ((t.state === 'arr' || t.state === 'done') && a === t.idx) {
-    const c = ref.coords.get(locs[a].t);
+    const c = stationPoint(locs[a].t, ref.coords.get(locs[a].t));
     v.st = t.state === 'done' ? 'end' : 'at';
     v.p = [r5(c.lat), r5(c.lng)];
     v.at = locName(locs[a].t);
   } else {
     if (a < 0 && b < 0) return null;
     if (a < 0 || b < 0) {
-      const c = ref.coords.get(locs[a >= 0 ? a : b].t);
+      const k = a >= 0 ? a : b;
+      const c = stationPoint(locs[k].t, ref.coords.get(locs[k].t));
       v.st = 'at';
       v.p = [r5(c.lat), r5(c.lng)];
       v.at = locName(locs[a >= 0 ? a : b].t);
     } else {
-      const ca = ref.coords.get(locs[a].t);
-      const cb = ref.coords.get(locs[b].t);
+      const ca = stationPoint(locs[a].t, ref.coords.get(locs[a].t));
+      const cb = stationPoint(locs[b].t, ref.coords.get(locs[b].t));
       const cur = locs[t.idx];
       const tCur = t.state === 'arr' ? timeIn(cur) : timeOut(cur);
       const tA = timeOut(locs[a]) ?? tCur;
@@ -312,6 +314,12 @@ export function view(t, now = Date.now()) {
       const t1 = Math.max(t.lastTime + 30000, t.lastTime + (tB - tCur) * 60000);
       v.st = 'mv';
       v.seg = [r5(ca.lat), r5(ca.lng), r5(cb.lat), r5(cb.lng), Math.round(t0), Math.round(t1)];
+      // Follow the real track between the two points when its route is known
+      const pr = pathFor(locs[a].t, ref.coords.get(locs[a].t), locs[b].t, ref.coords.get(locs[b].t));
+      if (pr) {
+        v.pk = pr.key;
+        if (pr.rev) v.rv = 1;
+      }
       v.at = locName(cur.t);
     }
   }
@@ -333,9 +341,18 @@ export function detail(key) {
   const run = t.run;
   const stops = [];
   const path = [];
+  let prev = null; // last located point [tiploc, coords]
   run.locs.forEach((l, i) => {
     const c = ref.coords.get(l.t);
-    if (c) path.push([r5(c.lat), r5(c.lng)]);
+    if (c) {
+      const pts = prev && pathPoints(prev[0], prev[1], l.t, c);
+      if (pts) for (const p of pts.slice(1)) path.push(p);
+      else {
+        const sp = stationPoint(l.t, c);
+        path.push([r5(sp.lat), r5(sp.lng)]);
+      }
+      prev = [l.t, c];
+    }
     if (!l.pub && i !== 0 && i !== run.locs.length - 1) return;
     const s = timeIn(l);
     const passed = i < t.idx || (i === t.idx && t.state !== 'pending' && t.state !== 'arr');

@@ -5,6 +5,7 @@ import { loadSchedule } from './schedule.js';
 import { startFeeds, feedState } from './feeds.js';
 import { startServer } from './server.js';
 import { londonParts } from './time.js';
+import { loadTracks, savePathCache } from './tracks.js';
 
 async function loadReference({ fresh = false } = {}) {
   const naptan = await download(config.naptanUrl, 'naptan-rail.csv', { maxAgeHours: fresh ? 0 : 24 * 7 });
@@ -51,6 +52,10 @@ async function main() {
   await loadReference();
   startFeeds();
   scheduleDailyReload();
+  // Real track geometry: trains move in straight lines until this is ready
+  await loadTracks();
+  setInterval(savePathCache, 5 * 60000);
+  setInterval(loadTracks, 7 * 24 * 3600000); // refresh railway lines weekly
 }
 
 main().catch((err) => {

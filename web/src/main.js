@@ -1,5 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import '@maplibre/maplibre-gl-leaflet';
 import './style.css';
 import { OPERATORS, opName, opColour, delayColour } from './operators.js';
 import { demoSnapshot, demoDetail } from './demo.js';
@@ -46,16 +48,14 @@ const map = L.map('map', {
   preferCanvas: true,
 });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-// ---------- Basemaps: plain map or satellite imagery ----------
-// Both providers are free without an API key for personal, non-commercial use.
+// ---------- Basemaps ----------
+// Street maps from OpenFreeMap (free, no key, no usage limits), drawn by MapLibre;
+// satellite imagery from Esri (free for personal, non-commercial use).
+const OFM_ATTR =
+  '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>';
 const BASEMAPS = {
-  map: [
-    // Standard OpenStreetMap tiles
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }),
-  ],
+  map: [L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/positron', attribution: OFM_ATTR })],
+  dark: [L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/dark', attribution: OFM_ATTR })],
   satellite: [
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
@@ -77,13 +77,13 @@ const BASEMAPS = {
 
 function setBasemap(name) {
   if (!BASEMAPS[name]) name = 'map';
-  for (const layers of Object.values(BASEMAPS)) for (const l of layers) l.remove();
+  for (const layers of Object.values(BASEMAPS)) for (const l of layers) if (map.hasLayer(l)) l.remove();
   for (const l of BASEMAPS[name]) l.addTo(map);
   store.set('basemap', name);
   document.body.dataset.basemap = name;
-  for (const b of document.querySelectorAll('[data-basemap]')) b.setAttribute('aria-pressed', b.dataset.basemap === name);
+  for (const b of document.querySelectorAll('.basemap-switch [data-basemap]')) b.setAttribute('aria-pressed', b.dataset.basemap === name);
 }
-for (const b of document.querySelectorAll('[data-basemap]')) b.addEventListener('click', () => setBasemap(b.dataset.basemap));
+for (const b of document.querySelectorAll('.basemap-switch [data-basemap]')) b.addEventListener('click', () => setBasemap(b.dataset.basemap));
 setBasemap(store.get('basemap', 'map'));
 
 let routeLine = null;
@@ -118,11 +118,71 @@ map.on('zoomstart', () => canvas.classList.add('hide'));
 map.on('zoomend', () => canvas.classList.remove('hide'));
 resize();
 
+// ---------- Track routes (so trains follow the rails) ----------
+// key → { pts: [[lat,lng],…], cum: [metres along], total }
+const routes = new Map();
+const routeWanted = new Set();
+let routeTimer = null;
+
+function prepRoute(pts) {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) {
+    const [a, b] = [pts[i - 1], pts[i]];
+    const dx = (b[1] - a[1]) * Math.cos((a[0] * Math.PI) / 180);
+    const dy = b[0] - a[0];
+    cum.push(cum[i - 1] + Math.hypot(dx, dy));
+  }
+  return { pts, cum, total: cum[cum.length - 1] };
+}
+
+function wantRoute(key) {
+  if (DEMO || routes.has(key) || routeWanted.has(key)) return;
+  routeWanted.add(key);
+  clearTimeout(routeTimer);
+  routeTimer = setTimeout(fetchRoutes, 150);
+}
+
+async function fetchRoutes() {
+  const keys = [...routeWanted].filter((k) => !routes.has(k)).slice(0, 150);
+  if (!keys.length) return;
+  try {
+    const res = await fetch(`${WORKER}/api/paths?k=${keys.map(encodeURIComponent).join(',')}`);
+    const data = await res.json();
+    for (const k of keys) {
+      if (data[k]) routes.set(k, prepRoute(data[k]));
+      routeWanted.delete(k);
+    }
+  } catch {
+    for (const k of keys) routeWanted.delete(k); // try again on a later update
+  }
+  if (routeWanted.size) routeTimer = setTimeout(fetchRoutes, 150);
+}
+
+/** Point a fraction f of the way along a route (reversed if rev). */
+function alongRoute(r, f, rev) {
+  const d = (rev ? 1 - f : f) * r.total;
+  const { pts, cum } = r;
+  let lo = 0, hi = cum.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid] <= d) lo = mid;
+    else hi = mid;
+  }
+  const a = pts[lo], b = pts[hi];
+  const span = cum[hi] - cum[lo] || 1;
+  const u = (d - cum[lo]) / span;
+  const dir = rev ? [a[0] - b[0], a[1] - b[1]] : [b[0] - a[0], b[1] - a[1]];
+  return { lat: a[0] + (b[0] - a[0]) * u, lng: a[1] + (b[1] - a[1]) * u, dir };
+}
+
 function position(v, t) {
   if (v.st === 'mv' && v.seg) {
     const [la0, ln0, la1, ln1, t0, t1] = v.seg;
     let f = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
     f = Math.max(0, Math.min(0.97, f)); // wait just short of the station until it's reported
+    const r = v.pk && routes.get(v.pk);
+    if (r && r.total > 0) return alongRoute(r, f, v.rv);
+    if (v.pk) wantRoute(v.pk);
     return { lat: la0 + (la1 - la0) * f, lng: ln0 + (ln1 - ln0) * f, dir: [la1 - la0, ln1 - ln0] };
   }
   return v.p ? { lat: v.p[0], lng: v.p[1], dir: null } : null;
@@ -145,6 +205,28 @@ function colourOf(v) {
   return colourMode === 'delay' ? delayColour(v.dl) : opColour(v.toc);
 }
 
+// Exact (unrounded) screen position. Leaflet's own conversion rounds to whole pixels,
+// which made dots step and direction arrows wobble.
+function toScreen(lat, lng) {
+  const lp = map.project([lat, lng]).subtract(map.getPixelOrigin());
+  return map.layerPointToContainerPoint(lp);
+}
+
+// Smoothed arrow heading per train (radians), so it turns gently round curves
+const headings = new Map();
+function heading(id, target) {
+  const prev = headings.get(id);
+  if (prev === undefined || Number.isNaN(prev)) {
+    headings.set(id, target);
+    return target;
+  }
+  let d = target - prev;
+  d = Math.atan2(Math.sin(d), Math.cos(d)); // shortest way round
+  const h = Math.abs(d) > 2.5 ? target : prev + d * 0.15; // reversals snap, small changes ease
+  headings.set(id, h);
+  return h;
+}
+
 function draw() {
   const size = map.getSize();
   ctx.clearRect(0, 0, size.x, size.y);
@@ -159,7 +241,7 @@ function draw() {
     if (!visible(v)) continue;
     const p = position(v, t);
     if (!p) continue;
-    const pt = map.latLngToContainerPoint([p.lat, p.lng]);
+    const pt = toScreen(p.lat, p.lng);
     if (pt.x < -20 || pt.y < -20 || pt.x > size.x + 20 || pt.y > size.y + 20) continue;
     drawn.push([pt.x, pt.y, v.id]);
     if (v.id === selectedId) {
@@ -179,12 +261,12 @@ function drawTrain(v, pt, p, r, label, isSelected) {
 
   // Direction of travel
   if (p.dir && (p.dir[0] || p.dir[1])) {
-    const ahead = map.latLngToContainerPoint([p.lat + p.dir[0] * 0.001, p.lng + p.dir[1] * 0.001]);
-    const dx = ahead.x - pt.x;
-    const dy = ahead.y - pt.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len;
-    const uy = dy / len;
+    // Screen direction of travel: step a fixed small distance along the direction, unrounded
+    const k = 0.002 / (Math.hypot(p.dir[0], p.dir[1]) || 1);
+    const ahead = toScreen(p.lat + p.dir[0] * k, p.lng + p.dir[1] * k);
+    const ang = heading(v.id, Math.atan2(ahead.y - pt.y, ahead.x - pt.x));
+    const ux = Math.cos(ang);
+    const uy = Math.sin(ang);
     ctx.beginPath();
     // arrowhead ahead of the lamp, showing direction of travel
     const tip = r + 6;
@@ -459,7 +541,10 @@ function connect() {
     const d = JSON.parse(e.data);
     skew = d.now - Date.now();
     for (const v of d.upd) trains.set(v.id, v);
-    for (const id of d.del) trains.delete(id);
+    for (const id of d.del) {
+      trains.delete(id);
+      headings.delete(id);
+    }
     afterUpdate();
   });
   es.addEventListener('ping', (e) => {

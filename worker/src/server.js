@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { trains, view, detail, cleanup, stats } from './trains.js';
 import { sched } from './schedule.js';
 import { feedState } from './feeds.js';
+import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -23,6 +24,7 @@ function send(res, event, data) {
 
 /** Every push interval, send only what changed to every connected browser. */
 function tick() {
+  processQueue(Math.min(400, config.pushInterval / 3)); // work out a few more track routes
   const now = Date.now();
   cleanup(now);
   const views = snapshot(now);
@@ -69,6 +71,7 @@ export function startServer() {
         trainsShown: lastViews.size,
         runsLoaded: sched.runs.size,
         scheduleLoadedAt: sched.loadedAt,
+        tracks: { ...tracks, queued: queueLength() },
         stats,
         clients: clients.size,
       });
@@ -76,6 +79,13 @@ export function startServer() {
     if (url.pathname === '/api/trains') {
       const now = Date.now();
       return json(res, 200, { now, trains: [...snapshot(now).values()] });
+    }
+    if (url.pathname === '/api/paths') {
+      // Track routes for the map: ?k=KEY1,KEY2 (keys as sent in train views)
+      const keys = (url.searchParams.get('k') || '').split(',').filter(Boolean).slice(0, 200);
+      cors(res);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' });
+      return res.end(JSON.stringify(getPaths(keys)));
     }
     if (url.pathname.startsWith('/api/train/')) {
       const d = detail(decodeURIComponent(url.pathname.slice('/api/train/'.length)));
