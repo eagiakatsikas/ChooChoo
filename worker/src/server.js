@@ -9,6 +9,9 @@ import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
 import { busState, busesFor, busDetail, routeList, routeShapes, busTo } from './buses.js';
 import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
+import { record, frameAt, replayInfo } from './replay.js';
+import { disruptions } from './disruptions.js';
+import { watchPairs, historyFor, historyInfo } from './history.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -32,6 +35,7 @@ function tick() {
   const now = Date.now();
   cleanup(now);
   const views = snapshot(now);
+  record(views, now); // for replay
   const upd = [];
   const next = new Map();
   for (const [id, v] of views) {
@@ -107,6 +111,9 @@ export function startServer() {
         stations: { count: ref.stations.size, missing: ["WAT","CLJ","LBG","VIC","RAY","WIM"].filter((c) => !ref.stations.has(c)), tiplocs: Object.fromEntries(["WAT","RAY","CLJ"].map((c) => [c, [...(ref.stations.get(c)?.tiplocs || [])]])) },
         buses: busState,
         alerts: alertState,
+        replay: replayInfo(),
+        disruptions: { at: disruptions.at, count: disruptions.lines.length, error: disruptions.error },
+        history: historyInfo(),
         stats,
         clients: clients.size,
       });
@@ -136,6 +143,19 @@ export function startServer() {
     if (url.pathname.startsWith('/api/bus/')) {
       const d = busDetail(decodeURIComponent(url.pathname.slice('/api/bus/'.length)));
       return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
+    }
+    if (url.pathname === '/api/disruptions') return json(res, 200, disruptions);
+    if (url.pathname === '/api/replay') {
+      const t = Number(url.searchParams.get('t')) || Date.now();
+      return json(res, 200, frameAt(t));
+    }
+    if (url.pathname === '/api/history') {
+      // ?f=RAY&t=WAT, and optionally &watch=RAY-WAT,CLJ-WIM (your saved routes, to start recording)
+      const w = url.searchParams.get('watch');
+      if (w) watchPairs(w.split(',').map((x) => ({ f: x.split('-')[0], t: x.split('-')[1] })));
+      const f = url.searchParams.get('f');
+      const to = url.searchParams.get('t');
+      return json(res, 200, f && to ? historyFor(f, to) : { ok: true });
     }
     if (url.pathname === '/api/push/key') return json(res, 200, { key: publicKey() });
     if (url.pathname.startsWith('/api/alerts') && req.method === 'POST') {

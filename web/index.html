@@ -31,6 +31,17 @@
       <p class="count" id="count"></p>
     </header>
 
+    <button class="disrupt-pill" id="disruptPill" type="button" hidden></button>
+    <button class="replay-btn" id="replayBtn" type="button" aria-pressed="false" aria-label="Replay the last hour" title="Replay the last hour">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>
+    </button>
+    <div class="replay-bar" id="replayBar" hidden>
+      <button class="rp-play" id="rpPlay" type="button" aria-label="Play">▶</button>
+      <input id="rpSlider" type="range" min="0" max="60" step="1" value="60" aria-label="Minutes ago" />
+      <span class="rp-time" id="rpTime">Live</span>
+      <button class="rp-live" id="rpLive" type="button">Back to live</button>
+    </div>
+
     <div class="basemap-switch" role="group" aria-label="Map style">
       <button data-basemap="map" aria-pressed="true">Map</button>
       <button data-basemap="dark" aria-pressed="false">Dark</button>
@@ -122,6 +133,14 @@
         <button class="close" id="alertsClose" aria-label="Close">×</button>
       </div>
       <div id="alertsBody"></div>
+    </section>
+
+    <section class="panel home disrupt" id="disruptPanel" hidden aria-label="Disruption">
+      <div class="panel-head">
+        <h2>Disruption</h2>
+        <button class="close" id="disruptClose" aria-label="Close">×</button>
+      </div>
+      <div id="disruptBody"></div>
     </section>
 
     <section class="panel detail" id="detail" hidden aria-live="polite">

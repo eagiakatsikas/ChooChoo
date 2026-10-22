@@ -57,6 +57,7 @@ let tab = 'map'; // bottom navigation: home, map, departures, alerts, buses
 let showTrains = store0('showTrains', true);
 let showBuses = store0('showBuses', true);
 const boardCrs = new Map(); // train id → the station you'd board at (when opened from a board)
+let disrupt = { lines: [] }; // line status from the worker
 
 // ---------- Map ----------
 const map = L.map('map', {
@@ -257,6 +258,11 @@ function draw() {
   drawn = [];
   let selected = null;
 
+  if (replay && replay.frame) {
+    drawReplay(size, r, labels);
+    requestAnimationFrame(draw);
+    return;
+  }
   for (const v of trains.values()) {
     if (!showTrains || !visible(v)) continue;
     const p = position(v, t);
@@ -371,7 +377,11 @@ const statusEl = document.getElementById('status');
 const statusText = document.getElementById('statusText');
 const countEl = document.getElementById('count');
 
+let lastStatus = ['connecting', 'Connecting'];
 function setStatus(state, text) {
+  const replaying = document.body.classList.contains('replaying');
+  if (text !== 'Replay') lastStatus = [state, text];
+  if (replaying && text !== 'Replay') return; // keep showing "Replay" until you go back to live
   statusEl.dataset.state = state;
   statusText.textContent = text;
 }
@@ -411,7 +421,9 @@ function renderOps(perOp) {
     const li = document.createElement('li');
     const id = 'op-' + code;
     li.innerHTML = `<input type="checkbox" id="${id}" ${hidden.has(code) ? '' : 'checked'}>
-      <label for="${id}"><span class="sw" style="--c:${opColour(code)}"></span><span class="nm">${opName(code)}</span><span class="n">${perOp.get(code)}</span></label>`;
+      <label for="${id}"><span class="sw" style="--c:${opColour(code)}"></span><span class="nm">${opName(code)}${
+        disruptedOp(opName(code)) ? ` <span class="op-warn" title="${esc(disruptedOp(opName(code)).severity)}">⚠</span>` : ''
+      }</span><span class="n">${perOp.get(code)}</span></label>`;
     li.querySelector('input').addEventListener('change', (e) => {
       if (e.target.checked) hidden.delete(code);
       else hidden.add(code);
@@ -1246,6 +1258,7 @@ function setAlertsOpen(open) {
 
 const home = createHome({
   alerts: () => alerts,
+  disruptionNote: (ops) => disruptionNote(ops),
   WORKER,
   store,
   esc,
@@ -1276,6 +1289,7 @@ function setHomeOpen(open) {
 document.getElementById('homeClose').onclick = () => setTab('map');
 
 function setTab(name, preset = null) {
+  setDisruptOpen(false);
   if (name !== 'home') setHomeOpen(false);
   if (name !== 'alerts') setAlertsOpen(false);
   if (name !== 'departures' && !finderEl.hidden) setFinderOpen(false);
@@ -1294,6 +1308,9 @@ for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
     setTab(b.dataset.tab);
   });
 }
+loadDisruptions();
+setInterval(loadDisruptions, 120000);
+
 // Trains and buses on/off
 function applyLayers() {
   for (const [id, on] of [['layerTrains', showTrains], ['layerBuses', showBuses]]) document.getElementById(id).setAttribute('aria-pressed', on);
@@ -1325,6 +1342,157 @@ if (wantTrain) {
 if (wantTrain) markTab('map');
 else if (favs.length && !params.has('demo')) setTab('home');
 else markTab('map');
+
+// ---------- Disruption ----------
+const disruptPill = document.getElementById('disruptPill');
+function disruptedOp(name) {
+  const normOp = (n) => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
+  const n = normOp(name);
+  if (!n) return null;
+  return disrupt.lines.find((l) => normOp(l.name) === n || (n.length > 4 && normOp(l.name).includes(n))) || null;
+}
+async function loadDisruptions() {
+  if (DEMO) return;
+  try {
+    const res = await fetch(`${WORKER}/api/disruptions`);
+    disrupt = await res.json();
+  } catch {
+    return;
+  }
+  const n = disrupt.lines.length;
+  disruptPill.hidden = !n;
+  disruptPill.textContent = `⚠ ${n} ${n === 1 ? 'line' : 'lines'} with disruption`;
+  renderDisruptions();
+  updateCounts();
+  home.render();
+}
+function renderDisruptions() {
+  const body = document.getElementById('disruptBody');
+  if (!disrupt.lines.length) {
+    body.innerHTML = '<p class="bp-intro">Good service on all lines.</p>';
+    return;
+  }
+  const mode = (m) => ({ 'national-rail': 'National Rail', 'elizabeth-line': 'Elizabeth line', overground: 'Overground', dlr: 'DLR', tube: 'Underground' })[m] || m;
+  body.innerHTML = `<ul class="dz-list">${disrupt.lines
+    .map(
+      (l) => `<li class="${l.level <= 6 ? 'bad' : ''}"><b>${esc(l.name)}</b> <span class="dz-sev">${esc(l.severity)}</span><small>${esc(mode(l.mode))}</small>${
+        l.reason ? `<p>${esc(l.reason)}</p>` : ''
+      }</li>`,
+    )
+    .join('')}</ul><p class="b-foot">From TfL, which includes National Rail operators. Updated every couple of minutes.</p>`;
+}
+function setDisruptOpen(open) {
+  document.getElementById('disruptPanel').hidden = !open;
+  if (open) {
+    renderDisruptions();
+    setFiltersOpen(false);
+    setBusPanelOpen(false);
+  }
+}
+disruptPill.onclick = () => setDisruptOpen(document.getElementById('disruptPanel').hidden);
+document.getElementById('disruptClose').onclick = () => setDisruptOpen(false);
+/** For Home: disruption on the operators running your trains. */
+function disruptionNote(ops) {
+  const hit = [...new Set(ops)].map(disruptedOp).filter(Boolean);
+  const uniq = [...new Map(hit.map((l) => [l.id, l])).values()];
+  if (!uniq.length) return '';
+  return `<div class="h-dz">${uniq
+    .map((l) => `<p><b>⚠ ${esc(l.name)}: ${esc(l.severity)}</b>${l.reason ? `<small>${esc(l.reason)}</small>` : ''}</p>`)
+    .join('')}</div>`;
+}
+
+// ---------- Replay the last hour ----------
+let replay = null; // { ago (minutes), frame, playing }
+const replayBtn = document.getElementById('replayBtn');
+const replayBar = document.getElementById('replayBar');
+const rpSlider = document.getElementById('rpSlider');
+const rpTime = document.getElementById('rpTime');
+const rpPlay = document.getElementById('rpPlay');
+let rpTimer = null;
+let rpFetch = null;
+
+function drawReplay(size, r, labels) {
+  drawn = [];
+  for (const [id, la, lo, dl, toc, hc] of replay.frame.trains) {
+    if (!showTrains || hidden.has(toc in OPERATORS ? toc : 'ZZ')) continue;
+    const pt = toScreen(la, lo);
+    if (pt.x < -20 || pt.y < -20 || pt.x > size.x + 20 || pt.y > size.y + 20) continue;
+    drawTrain({ id: 'rp:' + id, toc, dl, hc, st: 'at' }, pt, { lat: la, lng: lo, dir: null }, r, labels, false);
+  }
+}
+
+function fetchReplay() {
+  clearTimeout(rpFetch);
+  rpFetch = setTimeout(async () => {
+    const t = now() - replay.ago * 60000;
+    rpTime.textContent = replay.ago === 0 ? 'Now' : `${new Date(t).toTimeString().slice(0, 5)} · ${replay.ago} min ago`;
+    try {
+      const res = await fetch(`${WORKER}/api/replay?t=${Math.round(t)}`);
+      const d = await res.json();
+      if (!replay) return;
+      if (!d.frame) {
+        rpTime.textContent = 'Nothing recorded yet';
+        return;
+      }
+      replay.frame = d.frame;
+      // How far back the recording goes (the server keeps up to an hour)
+      const back = Math.floor((now() - d.from) / 60000);
+      rpSlider.min = String(60 - Math.min(60, Math.max(1, back)));
+    } catch {}
+  }, 120);
+}
+
+function setReplay(on) {
+  clearInterval(rpTimer);
+  if (!on) {
+    replay = null;
+    replayBar.hidden = true;
+    replayBtn.setAttribute('aria-pressed', 'false');
+    document.body.classList.remove('replaying');
+    connectStatus();
+    return;
+  }
+  closeDetail();
+  replay = { ago: 15, frame: null, playing: false };
+  rpSlider.value = String(60 - replay.ago);
+  replayBar.hidden = false;
+  replayBtn.setAttribute('aria-pressed', 'true');
+  document.body.classList.add('replaying');
+  setStatus('stale', 'Replay');
+  fetchReplay();
+}
+replayBtn.onclick = () => setReplay(!replay);
+document.getElementById('rpLive').onclick = () => setReplay(false);
+rpSlider.addEventListener('input', () => {
+  if (!replay) return;
+  replay.ago = 60 - Number(rpSlider.value);
+  fetchReplay();
+});
+rpPlay.onclick = () => {
+  if (!replay) return;
+  if (rpTimer) {
+    clearInterval(rpTimer);
+    rpTimer = null;
+    rpPlay.textContent = '▶';
+    return;
+  }
+  rpPlay.textContent = '❚❚';
+  rpTimer = setInterval(() => {
+    if (!replay || replay.ago <= 0) {
+      clearInterval(rpTimer);
+      rpTimer = null;
+      rpPlay.textContent = '▶';
+      return;
+    }
+    replay.ago -= 1;
+    rpSlider.value = String(60 - replay.ago);
+    fetchReplay();
+  }, 800);
+};
+function connectStatus() {
+  setStatus(...lastStatus);
+}
+if (DEMO) replayBtn.hidden = true;
 
 // ---------- Ding Ding: buses ----------
 // Favourite routes show at any zoom; zoomed in, every bus in view. Positions come from the

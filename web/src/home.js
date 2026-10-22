@@ -80,6 +80,40 @@ export function createHome(ctx) {
 
   const boards = new Map(); // "FROM|TO" → data
   let busTo = null; // { crs, at, options }
+  const hist = new Map(); // "FROM|TO" → reliability summary
+
+  async function fetchHistory(c) {
+    const watch = ctx
+      .favs()
+      .flatMap((f) => [`${f.f}-${f.t}`, `${f.t}-${f.f}`])
+      .slice(0, 10)
+      .join(',');
+    try {
+      const res = await fetch(`${ctx.WORKER}/api/history?f=${c.from.c}&t=${c.to.c}&watch=${watch}`);
+      hist.set(`${c.from.c}|${c.to.c}`, await res.json());
+    } catch {}
+  }
+
+  /** How this route has been running lately. */
+  function reliability(c) {
+    const h = hist.get(`${c.from.c}|${c.to.c}`);
+    if (!h) return '';
+    const w = h.week;
+    if (!w || w.trains < 3) {
+      return `<div class="h-rel"><h3 class="h-head">How reliable it’s been</h3><p class="h-why">Choo Choo has started keeping track of this route. Check back in a day or two to see how often its trains run late.</p></div>`;
+    }
+    const pct = Math.round((w.onTime / w.trains) * 100);
+    const usual = h.times
+      .filter((x) => x.trains >= 2 && (x.late || x.cancelled))
+      .sort((a, b) => b.late + b.cancelled - (a.late + a.cancelled))
+      .slice(0, 3)
+      .map((x) => `<li><b>${esc(x.s)}</b> late ${x.late} of ${x.trains} days${x.cancelled ? `, cancelled ${x.cancelled}` : ''}${x.worst >= 3 ? ` (up to ${x.worst} min)` : ''}</li>`)
+      .join('');
+    return `<div class="h-rel"><h3 class="h-head">How reliable it’s been (last 7 days)</h3>
+      <div class="h-meter" role="img" aria-label="${pct}% on time"><span style="width:${pct}%"></span></div>
+      <p class="h-relsum"><b>${pct}% on time</b> · ${w.trains} trains · ${w.late} late${w.late ? ` (avg ${w.avgLate} min)` : ''}${w.cancelled ? ` · ${w.cancelled} cancelled` : ''}</p>
+      ${usual ? `<ul class="h-usual">${usual}</ul>` : ''}</div>`;
+  }
 
   async function fetchBusTo(st) {
     if (!here) return;
@@ -194,6 +228,8 @@ export function createHome(ctx) {
       }
       html += `<div class="h-more"><button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full departures board</button><button class="h-link" type="button" data-board="${c.from.c}|">All trains from ${esc(ctx.short(c.from.n))}</button></div>`;
       html += busSection(c.from, walk);
+      if (ctx.disruptionNote && d) html += ctx.disruptionNote(d.rows.map((r) => r.op));
+      html += reliability(c);
       html += '</section>';
     }
     // Other saved routes, one line each
@@ -221,6 +257,7 @@ export function createHome(ctx) {
     const jobs = [];
     if (c) jobs.push(fetchBoard(c.from.c, c.to.c));
     if (c && (walkMins(c.from) ?? 0) >= 12) jobs.push(fetchBusTo(c.from));
+    if (c) jobs.push(fetchHistory(c));
     for (const f of ctx.favs().slice(1, 6)) jobs.push(fetchBoard(f.f, f.t));
     render();
     await Promise.all(jobs);
