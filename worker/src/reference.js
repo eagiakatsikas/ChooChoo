@@ -124,6 +124,24 @@ export function addTiploc(t) {
 
 const pendingTiplocs = [];
 
+// CRS → [name, lat, lng] for the London termini, used only if NaPTAN doesn't give them
+const TERMINI = {
+  WAT: ['London Waterloo', 51.5031, -0.1132],
+  VIC: ['London Victoria', 51.4952, -0.1441],
+  LBG: ['London Bridge', 51.5049, -0.0863],
+  CHX: ['London Charing Cross', 51.5080, -0.1247],
+  CST: ['London Cannon Street', 51.5113, -0.0904],
+  BFR: ['London Blackfriars', 51.5116, -0.1033],
+  LST: ['London Liverpool Street', 51.5178, -0.0817],
+  FST: ['London Fenchurch Street', 51.5116, -0.0789],
+  EUS: ['London Euston', 51.5282, -0.1337],
+  KGX: ['London Kings Cross', 51.5320, -0.1233],
+  STP: ['London St Pancras International', 51.5320, -0.1270],
+  PAD: ['London Paddington', 51.5154, -0.1755],
+  MYB: ['London Marylebone', 51.5225, -0.1631],
+  MOG: ['Moorgate', 51.5186, -0.0886],
+};
+
 /**
  * After all TIPLOC records are read: stations often have several TIPLOCs but NaPTAN
  * lists one. Borrow coordinates from a sibling sharing a CRS code or STANOX.
@@ -146,17 +164,38 @@ export function finaliseTiplocs() {
       borrowed++;
     }
   }
-  // Passenger stations: CRS codes that have a known location (from NaPTAN)
+  // Passenger stations: CRS codes that have a known location. Usually NaPTAN lists the
+  // station under one of its own TIPLOCs; when it lists it under a TIPLOC with no CRS code
+  // (London Waterloo, for one), the location is borrowed via the shared STANOX above and
+  // the name comes from the timetable instead.
   ref.stations.clear();
   ref.tiplocCrs.clear();
   for (const t of pendingTiplocs) {
     if (!t._crs) continue;
-    const c = byCrs.get(t._crs);
+    const own = byCrs.get(t._crs);
+    const c = own || ref.coords.get(t._tiploc);
     if (!c) continue;
     let st = ref.stations.get(t._crs);
-    if (!st) ref.stations.set(t._crs, (st = { crs: t._crs, name: c.name, lat: c.lat, lng: c.lng, tiplocs: new Set() }));
+    if (!st) {
+      const name = own ? c.name : ref.names.get(t._tiploc) || c.name;
+      ref.stations.set(t._crs, (st = { crs: t._crs, name, lat: c.lat, lng: c.lng, tiplocs: new Set() }));
+    }
     st.tiplocs.add(t._tiploc);
     ref.tiplocCrs.set(t._tiploc, t._crs);
+  }
+  // Last resort for the London termini, so the train finder always has them
+  for (const t of pendingTiplocs) {
+    const f = TERMINI[t._crs];
+    if (!f || (ref.stations.has(t._crs) && ref.stations.get(t._crs)._fixed !== true)) continue;
+    let st = ref.stations.get(t._crs);
+    if (!st) {
+      st = { crs: t._crs, name: f[0], lat: f[1], lng: f[2], tiplocs: new Set(), _fixed: true };
+      ref.stations.set(t._crs, st);
+      console.log(`[ref] ${t._crs} not in NaPTAN; using built-in location`);
+    }
+    st.tiplocs.add(t._tiploc);
+    ref.tiplocCrs.set(t._tiploc, t._crs);
+    if (!ref.coords.has(t._tiploc)) ref.coords.set(t._tiploc, { lat: f[1], lng: f[2], name: f[0] });
   }
   pendingTiplocs.length = 0;
   console.log(`[ref] ${borrowed} extra TIPLOCs mapped via CRS/STANOX; ${ref.stations.size} stations`);
