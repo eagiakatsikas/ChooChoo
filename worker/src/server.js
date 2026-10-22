@@ -6,6 +6,7 @@ import { sched } from './schedule.js';
 import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
+import { ref } from './reference.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -75,6 +76,7 @@ export function startServer() {
         tracks: { ...tracks, queued: queueLength() },
         memoryMB: Math.round(process.memoryUsage().rss / 1e6),
         nationalRail: { ...ldbState, configured: Boolean(config.ldbKey) },
+        stations: { count: ref.stations.size, missing: ["WAT","CLJ","LBG","VIC","RAY","WIM"].filter((c) => !ref.stations.has(c)) },
         stats,
         clients: clients.size,
       });

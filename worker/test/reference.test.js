@@ -21,3 +21,22 @@ test('a station NaPTAN lists under a TIPLOC without a CRS code is still a statio
   assert.equal(ref.stations.get('VIC').name, 'London Victoria');
   assert.ok(ref.coords.has('VICTRIC'));
 });
+
+test('NaPTAN rows with line breaks in a field, or only grid coordinates, still load', async () => {
+  const { loadNaptan } = await import('../src/reference.js');
+  const { writeFileSync, mkdtempSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const file = join(mkdtempSync(join(tmpdir(), 'naptan-')), 'n.csv');
+  writeFileSync(file, [
+    '﻿ATCOCode,CommonName,Notes,StopType,Easting,Northing,Longitude,Latitude',
+    '9100CLPHMJN,Clapham Junction Rail Station,"Busy station,',
+    'many platforms",RLY,527000,175500,-0.1704,51.4643',
+    '9100LNDNBDE,London Bridge Rail Station,,RLY,532900,180300,,',
+    '',
+  ].join('\n'));
+  await loadNaptan(file);
+  assert.equal(ref.coords.get('CLPHMJN').name, 'Clapham Junction');
+  const lb = ref.coords.get('LNDNBDE');
+  assert.ok(lb && Math.abs(lb.lat - 51.506) < 0.01 && Math.abs(lb.lng + 0.087) < 0.01, JSON.stringify(lb));
+});

@@ -31,6 +31,58 @@ function titleCase(s) {
     .replace(/\bJn\b/g, 'Jn');
 }
 
+/** British National Grid easting/northing → WGS84 [lat, lng] (accurate to a few metres). */
+export function osgbToWgs84(E, N) {
+  if (!E || !N) return null;
+  const a = 6377563.396, b = 6356256.909, F0 = 0.9996012717;
+  const lat0 = (49 * Math.PI) / 180, lon0 = (-2 * Math.PI) / 180, N0 = -100000, E0 = 400000;
+  const e2 = 1 - (b * b) / (a * a), n = (a - b) / (a + b);
+  let lat = lat0, M = 0;
+  do {
+    lat = (N - N0 - M) / (a * F0) + lat;
+    const dl = lat - lat0, sl = lat + lat0;
+    M = b * F0 * ((1 + n + 1.25 * n * n + 1.25 * n ** 3) * dl
+      - (3 * n + 3 * n * n + 2.625 * n ** 3) * Math.sin(dl) * Math.cos(sl)
+      + (1.875 * n * n + 1.875 * n ** 3) * Math.sin(2 * dl) * Math.cos(2 * sl)
+      - (35 / 24) * n ** 3 * Math.sin(3 * dl) * Math.cos(3 * sl));
+  } while (Math.abs(N - N0 - M) >= 0.00001);
+  const s = Math.sin(lat), c = Math.cos(lat), t = Math.tan(lat);
+  const nu = (a * F0) / Math.sqrt(1 - e2 * s * s);
+  const rho = (a * F0 * (1 - e2)) / (1 - e2 * s * s) ** 1.5;
+  const eta2 = nu / rho - 1;
+  const dE = E - E0;
+  const VII = t / (2 * rho * nu);
+  const VIII = (t / (24 * rho * nu ** 3)) * (5 + 3 * t * t + eta2 - 9 * t * t * eta2);
+  const IX = (t / (720 * rho * nu ** 5)) * (61 + 90 * t * t + 45 * t ** 4);
+  const X = 1 / (c * nu);
+  const XI = (1 / (c * 6 * nu ** 3)) * (nu / rho + 2 * t * t);
+  const XII = (1 / (c * 120 * nu ** 5)) * (5 + 28 * t * t + 24 * t ** 4);
+  const XIIA = (1 / (c * 5040 * nu ** 7)) * (61 + 662 * t * t + 1320 * t ** 4 + 720 * t ** 6);
+  const phi = lat - VII * dE ** 2 + VIII * dE ** 4 - IX * dE ** 6;
+  const lam = lon0 + X * dE - XI * dE ** 3 + XII * dE ** 5 - XIIA * dE ** 7;
+  // OSGB36 → WGS84 (Helmert)
+  const toXYZ = (p, l, A, B) => {
+    const ee = 1 - (B * B) / (A * A);
+    const v = A / Math.sqrt(1 - ee * Math.sin(p) ** 2);
+    return [v * Math.cos(p) * Math.cos(l), v * Math.cos(p) * Math.sin(l), (1 - ee) * v * Math.sin(p)];
+  };
+  const [x1, y1, z1] = toXYZ(phi, lam, a, b);
+  const sc = 20.4894e-6, sec = Math.PI / 648000;
+  const rx = 0.1502 * sec, ry = 0.247 * sec, rz = 0.8421 * sec;
+  const x2 = 446.448 + (1 + sc) * x1 - rz * y1 + ry * z1;
+  const y2 = -125.157 + rz * x1 + (1 + sc) * y1 - rx * z1;
+  const z2 = 542.06 - ry * x1 + rx * y1 + (1 + sc) * z1;
+  const A2 = 6378137, B2 = 6356752.3142, ee2 = 1 - (B2 * B2) / (A2 * A2);
+  const p = Math.hypot(x2, y2);
+  let la = Math.atan2(z2, p * (1 - ee2)), prev;
+  do {
+    prev = la;
+    const v = A2 / Math.sqrt(1 - ee2 * Math.sin(la) ** 2);
+    la = Math.atan2(z2 + ee2 * v * Math.sin(la), p);
+  } while (Math.abs(la - prev) > 1e-12);
+  return [(la * 180) / Math.PI, (Math.atan2(y2, x2) * 180) / Math.PI];
+}
+
 function parseCsvLine(line) {
   const out = [];
   let cur = '';
@@ -58,19 +110,30 @@ function parseCsvLine(line) {
 export async function loadNaptan(file) {
   let header = null;
   let n = 0;
+  let buf = '';
   for await (const line of lines(file)) {
-    if (!line.trim()) continue;
-    const row = parseCsvLine(line);
+    // A quoted field can contain line breaks: keep joining lines until the quotes balance
+    buf = buf ? `${buf}\n${line}` : line;
+    if ((buf.match(/"/g) || []).length % 2) continue;
+    const record = buf;
+    buf = '';
+    if (!record.trim()) continue;
+    const row = parseCsvLine(record);
     if (!header) {
-      header = Object.fromEntries(row.map((h, i) => [h.trim(), i]));
+      header = Object.fromEntries(row.map((h, i) => [h.trim().replace(/^﻿/, ''), i]));
       continue;
     }
-    const atco = row[header.ATCOCode] || '';
-    const type = row[header.StopType] || '';
+    const atco = (row[header.ATCOCode] || '').trim();
+    const type = (row[header.StopType] || '').trim();
     if (!atco.startsWith('9100') || (type && type !== 'RLY')) continue;
-    const lat = Number(row[header.Latitude]);
-    const lng = Number(row[header.Longitude]);
-    if (!lat || !lng) continue;
+    let lat = Number(row[header.Latitude]);
+    let lng = Number(row[header.Longitude]);
+    if (!lat || !lng) {
+      // Some stops only have British National Grid coordinates
+      const ll = osgbToWgs84(Number(row[header.Easting]), Number(row[header.Northing]));
+      if (!ll) continue;
+      [lat, lng] = ll;
+    }
     const tiploc = atco.slice(4).trim();
     const name = (row[header.CommonName] || tiploc).replace(/\s+Rail Station$/i, '').trim();
     ref.coords.set(tiploc, { lat, lng, name });
@@ -124,7 +187,8 @@ export function addTiploc(t) {
 
 const pendingTiplocs = [];
 
-// CRS → [name, lat, lng] for the London termini, used only if NaPTAN doesn't give them
+// CRS → [name, lat, lng] for London's termini and busiest interchanges, used only if
+// NaPTAN doesn't give them
 const TERMINI = {
   WAT: ['London Waterloo', 51.5031, -0.1132],
   VIC: ['London Victoria', 51.4952, -0.1441],
@@ -140,6 +204,27 @@ const TERMINI = {
   PAD: ['London Paddington', 51.5154, -0.1755],
   MYB: ['London Marylebone', 51.5225, -0.1631],
   MOG: ['Moorgate', 51.5186, -0.0886],
+  CLJ: ['Clapham Junction', 51.4643, -0.1704],
+  SRA: ['Stratford', 51.5419, -0.0034],
+  ZFD: ['Farringdon', 51.5203, -0.1053],
+  CTK: ['City Thameslink', 51.5139, -0.1033],
+  VXH: ['Vauxhall', 51.4861, -0.1229],
+  ECR: ['East Croydon', 51.3753, -0.0927],
+  WIM: ['Wimbledon', 51.4214, -0.2064],
+  SUR: ['Surbiton', 51.3925, -0.3041],
+  RMD: ['Richmond', 51.4631, -0.3013],
+  WIJ: ['Willesden Junction', 51.5325, -0.2447],
+  HHY: ['Highbury & Islington', 51.5461, -0.1040],
+  CBW: ['Canada Water', 51.4980, -0.0498],
+  WWA: ['Woolwich Arsenal', 51.4900, 0.0693],
+  LEW: ['Lewisham', 51.4657, -0.0141],
+  BRX: ['Brixton', 51.4633, -0.1145],
+  DMK: ['Denmark Hill', 51.4682, -0.0894],
+  NWX: ['New Cross', 51.4764, -0.0324],
+  SVS: ['Seven Sisters', 51.5822, -0.0749],
+  TOM: ['Tottenham Hale', 51.5883, -0.0599],
+  EAL: ['Ealing Broadway', 51.5150, -0.3017],
+  ABW: ['Abbey Wood', 51.4911, 0.1214],
 };
 
 /**
