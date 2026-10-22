@@ -486,6 +486,45 @@ button {
 
 /* ---------- Phones: panels become bottom sheets ---------- */
 @media (max-width: 899px) {
+  /* Train details on phones: a compact sheet; the stop list scrolls inside it */
+  .detail:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel.detail {
+    max-height: 46vh;
+    max-height: 46dvh;
+    padding: 16px 18px calc(10px + var(--safe-b));
+    border-radius: 50% 50% 0 0 / 22px 22px 0 0;
+  }
+  .detail h2.d-route {
+    font-size: 26px;
+  }
+  .d-from {
+    margin-top: 2px;
+  }
+  .d-state {
+    margin: 8px 0 6px;
+    font-size: 13px;
+  }
+  .detail .calls {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    border-top: 1px solid var(--ivory-rule);
+  }
+  .detail .calls li {
+    padding: 6px 0;
+    font-size: 13px;
+  }
+  .d-foot {
+    margin-top: 6px;
+    font-size: 11px;
+  }
+
   /* Full-width bar from the very top of the screen, behind the clock and battery,
      so no map shows (or gets blurred by the phone) above the header */
   .bar {
@@ -513,6 +552,7 @@ button {
     bottom: 0;
     width: auto;
     max-height: 62vh;
+    max-height: 62dvh;
     border-radius: 50% 50% 0 0 / 40px 40px 0 0;
     border-bottom: 0;
     padding-bottom: calc(16px + var(--safe-b));

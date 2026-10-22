@@ -423,6 +423,7 @@ const dState = document.getElementById('dState');
 const dCalls = document.getElementById('dCalls');
 const dFoot = document.getElementById('dFoot');
 let detailTimer = null;
+let scrolledFor = null;
 
 function delayText(dl) {
   if (dl == null) return '';
@@ -474,6 +475,13 @@ async function loadCalls() {
         }</span></li>`,
     )
     .join('');
+  // When a train is first opened, scroll its stop list to where it is now
+  if (scrolledFor !== selectedId) {
+    scrolledFor = selectedId;
+    const cur = dCalls.querySelector('li.here') || dCalls.querySelector('li:not(.done)');
+    const prev = cur && cur.previousElementSibling;
+    dCalls.scrollTop = prev ? prev.offsetTop - dCalls.offsetTop : 0;
+  }
   if (routeLine) routeLine.remove();
   routeLine = L.polyline(d.path, { color: '#d4a64a', weight: 3, opacity: 0.85, dashArray: '2 7', interactive: false }).addTo(map);
 }
