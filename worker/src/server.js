@@ -11,6 +11,7 @@ import { busState, busesFor, busDetail, routeList, routeShapes, busTo } from './
 import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
 import { record, frameAt, replayInfo } from './replay.js';
 import { euroViews, euroDetail, euroState } from './eurostar.js';
+import { getThere } from './getthere.js';
 import { disruptions } from './disruptions.js';
 import { watchPairs, historyFor, historyInfo } from './history.js';
 
@@ -173,6 +174,17 @@ export function startServer() {
           json(res, 404, { error: 'not found' });
         })
         .catch((err) => json(res, 400, { error: err.message }));
+      return;
+    }
+    if (url.pathname === '/api/getthere') {
+      // Door to station: ?la=&lo=&crs=
+      const st = ref.stations.get(String(url.searchParams.get('crs') || '').toUpperCase());
+      const la = Number(url.searchParams.get('la'));
+      const lo = Number(url.searchParams.get('lo'));
+      if (!st || !Number.isFinite(la) || !Number.isFinite(lo)) return json(res, 400, { error: 'Need la, lo and crs' });
+      getThere(la, lo, st)
+        .then((d) => json(res, 200, d))
+        .catch((err) => json(res, 502, { error: err.message, options: [] }));
       return;
     }
     if (url.pathname === '/api/busto') {

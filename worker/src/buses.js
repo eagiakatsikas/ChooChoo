@@ -50,7 +50,7 @@ const polledAt = new Map(); // lineId → last polled (ms)
 
 let lastReq = 0;
 let chain = Promise.resolve();
-function tfl(p) {
+export function tfl(p) {
   const run = async () => {
     const wait = lastReq + GAP_MS - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));

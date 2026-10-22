@@ -1335,6 +1335,9 @@ function applyLayers() {
   updateCounts();
   busShapes[showBuses ? 'addTo' : 'remove'](map);
 }
+// Show the switches as they were left (and hide route lines if buses are off)
+for (const [id, on] of [['layerTrains', showTrains], ['layerBuses', showBuses]]) document.getElementById(id).setAttribute('aria-pressed', on);
+setTimeout(() => !showBuses && busShapes.remove(), 0); // after the bus layer is set up
 document.getElementById('layerTrains').onclick = () => {
   showTrains = !showTrains;
   applyLayers();

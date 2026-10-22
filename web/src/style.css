@@ -1982,3 +1982,22 @@ body.replaying .toggles {
 .mb-recent li {
   grid-template-columns: auto 1fr 34px;
 }
+.h-mins {
+  display: grid;
+  justify-items: center;
+  min-width: 38px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: #24392f;
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--amber);
+}
+.h-mins small {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+}

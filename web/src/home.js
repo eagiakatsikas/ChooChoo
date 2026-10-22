@@ -66,7 +66,46 @@ export function createHome(ctx) {
   function walkMins(s) {
     if (!here || Date.now() - here.at > 15 * 60000) return null;
     const m = (metres(here.la, here.lo, s) * WALK_DETOUR) / WALK_MPS / 60;
-    return m > 60 ? null : Math.max(1, Math.round(m));
+    return Math.max(1, Math.round(m));
+  }
+
+  let there = null; // { crs, at, options } from TfL's journey planner
+
+  async function fetchThere(st) {
+    if (!here) return;
+    try {
+      const res = await fetch(`${ctx.WORKER}/api/getthere?la=${here.la.toFixed(5)}&lo=${here.lo.toFixed(5)}&crs=${st.c}`);
+      const d = await res.json();
+      there = { crs: st.c, at: Date.now(), options: d.options || [] };
+    } catch {
+      there = { crs: st.c, at: Date.now(), options: [] };
+    }
+  }
+
+  /** How long to get to the station, and how: a short walk, or TfL's quickest route. */
+  function travel(st) {
+    const walk = walkMins(st);
+    if (walk == null) return null;
+    if (walk <= 10) return { mins: walk, how: 'walk', text: `${walk} min walk` };
+    const opts = there && there.crs === st.c ? there.options : null;
+    if (opts && opts.length) {
+      const b = opts[0];
+      return { mins: b.mins, how: b.walkOnly ? 'walk' : 'ride', text: b.walkOnly ? `${b.mins} min walk` : `${b.mins} min by ${b.summary}`, options: opts };
+    }
+    return walk <= 60 ? { mins: walk, how: 'walk', text: `${walk} min walk` } : null;
+  }
+
+  /** Getting to the station: TfL's best few routes, door to station. */
+  function thereSection(st, tr) {
+    if (!tr || !tr.options || tr.how === 'walk' && tr.options.length < 2) return '';
+    const legText = (o) =>
+      o.legs
+        .filter((l) => l.mode !== 'walking' || l.mins >= 5)
+        .map((l) => (l.mode === 'walking' ? `walk ${l.mins} min` : `${esc(l.name)} from ${esc(l.from.replace(/ (Underground|Rail|DLR|Overground) Station$/i, ''))}${l.disrupted ? ' ⚠' : ''}`))
+        .join(' → ');
+    return `<div class="h-bus"><h3 class="h-head">Getting to ${esc(ctx.short(st.n))}</h3><ul>${tr.options
+      .map((o) => `<li><span class="h-mins">${o.mins}<small>min</small></span><span><b>${esc(o.summary)}</b><small>${legText(o) || 'Walk all the way'}</small></span></li>`)
+      .join('')}</ul></div>`;
   }
 
   /** Minutes until a "HH:MM" time today (handles just after midnight). */
@@ -171,19 +210,21 @@ export function createHome(ctx) {
     </button>`, leave, until };
   }
 
-  /** "Leave in 6 min" for the best train, or for the first one you can still walk to. */
-  function leaveLine(rows, best, walk) {
-    if (walk == null) return '';
+  /** "Leave in 6 min" for the best train, or for the first one you can still make. */
+  function leaveLine(rows, best, tr) {
+    if (!tr) return '';
+    const walk = tr.mins;
+    const verb = tr.how === 'walk' ? 'walk to' : 'make';
     const spare = (r) => {
       const u = minsUntil(r.etdTime || r.std);
       return u == null ? null : u - walk - 2; // a couple of minutes to find the platform
     };
     const b = spare(best);
-    if (b != null && b >= 0) return `<p class="h-leave">${b === 0 ? 'Leave now' : `Leave in ${b} min`} to walk to this one</p>`;
+    if (b != null && b >= 0) return `<p class="h-leave">${b === 0 ? 'Leave now' : `Leave in ${b} min`} to ${verb} this one</p>`;
     const next = rows.find((r) => !r.cancelled && (spare(r) ?? -1) >= 0);
-    if (!next) return `<p class="h-leave">It’s a ${walk} min walk: too far for the next few trains</p>`;
+    if (!next) return `<p class="h-leave">It’s ${tr.text} to the station: too far for the next few trains</p>`;
     const s2 = spare(next);
-    return `<p class="h-leave">Too late to walk to this one. ${s2 === 0 ? 'Leave now' : `Leave in ${s2} min`} for the ${esc(next.std)}</p>`;
+    return `<p class="h-leave">Too late to ${verb} this one. ${s2 === 0 ? 'Leave now' : `Leave in ${s2} min`} for the ${esc(next.std)}</p>`;
   }
 
   function render() {
@@ -204,12 +245,13 @@ export function createHome(ctx) {
     if (c) {
       const d = boards.get(`${c.from.c}|${c.to.c}`);
       const walk = walkMins(c.from);
+      const tr = travel(c.from);
       html += `<section class="h-card">
         <div class="h-route">
           <div><small>Your commute</small><b>${esc(ctx.short(c.from.n))} → ${esc(ctx.short(c.to.n))}</b></div>
           <button class="h-swap" type="button" aria-label="Swap direction" title="Swap direction">⇄</button>
         </div>
-        <p class="h-why">This way round because ${c.why}.${walk != null ? ` About ${walk} min walk to ${esc(ctx.short(c.from.n))}.` : ''}</p>`;
+        <p class="h-why">This way round because ${c.why}.${tr ? ` About ${esc(tr.text)} to ${esc(ctx.short(c.from.n))}.` : ''}</p>`;
       if (!d) html += '<p class="b-empty">Checking departures…</p>';
       else if (!d.rows.length) html += `<p class="b-empty">No direct trains in the next two hours.</p>`;
       else {
@@ -221,13 +263,13 @@ export function createHome(ctx) {
             <span class="h-in">${top.until != null ? (top.until <= 0 ? 'due now' : `in ${top.until} min`) : ''}</span></div>
           <div class="h-plat"><b>${esc(best.plat || '–')}</b><small>${best.plat ? (best.platLive ? 'Platform' : 'Planned platform') : 'Platform not yet known'}</small></div>
         </div>
-        ${leaveLine(d.rows, best, walk)}
+        ${leaveLine(d.rows, best, tr)}
         ${best.id && ctx.alerts() ? `<button class="h-alert" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${ctx.alerts().has(best.id)}">${ctx.alerts().has(best.id) ? '🔔 Alert on for this train' : `🔔 Alert me about the ${esc(best.std)}`}</button>` : ''}
         <div class="board h-board">${rows.map((r) => trainRow(r, walk).html).join('')}</div>
         <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail.' : 'Timetabled platforms until the station announces them.'} Tap a train to see it on the map.</p>`;
       }
       html += `<div class="h-more"><button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full departures board</button><button class="h-link" type="button" data-board="${c.from.c}|">All trains from ${esc(ctx.short(c.from.n))}</button></div>`;
-      html += busSection(c.from, walk);
+      html += thereSection(c.from, tr) || (tr && tr.options ? '' : busSection(c.from, walk));
       if (ctx.disruptionNote && d) html += ctx.disruptionNote(d.rows.map((r) => r.op));
       html += reliability(c);
       html += '</section>';
@@ -256,7 +298,10 @@ export function createHome(ctx) {
     const c = commute();
     const jobs = [];
     if (c) jobs.push(fetchBoard(c.from.c, c.to.c));
-    if (c && (walkMins(c.from) ?? 0) >= 12) jobs.push(fetchBusTo(c.from));
+    if (c && (walkMins(c.from) ?? 0) > 10) {
+      // TfL's journey planner first; the simple bus finder only if that has nothing
+      jobs.push(fetchThere(c.from).then(() => (there.options.length ? null : fetchBusTo(c.from))));
+    }
     if (c) jobs.push(fetchHistory(c));
     for (const f of ctx.favs().slice(1, 6)) jobs.push(fetchBoard(f.f, f.t));
     render();
