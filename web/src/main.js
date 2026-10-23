@@ -32,8 +32,21 @@ const ICON = {
   follow: svg('<path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="6.5"/>'),
   bus: svg('<rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8 18v2M16 18v2"/>'),
   check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>'),
+  play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>'),
+  pause: svg('<path d="M8 5.5v13M16 5.5v13" stroke-width="3"/>'),
   swap: svg('<path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/>'),
 };
+/** "updated 20s ago", kept ticking by the timer below. */
+function fresh(at) {
+  return `<span class="fresh" data-at="${Math.round(at)}">${agoText(at)}</span>`;
+}
+function agoText(at) {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  return s < 10 ? 'updated just now' : s < 60 ? `updated ${s}s ago` : `updated ${Math.round(s / 60)} min ago`;
+}
+setInterval(() => {
+  for (const el of document.querySelectorAll('.fresh[data-at]')) el.textContent = agoText(Number(el.dataset.at));
+}, 5000);
 const isStop = (id) => typeof id === 'string' && id.startsWith('stop:');
 function store0(k, d) {
   try {
@@ -462,7 +475,7 @@ function renderOps(perOp) {
     const id = 'op-' + code;
     li.innerHTML = `<input type="checkbox" id="${id}" ${hidden.has(code) ? '' : 'checked'}>
       <label for="${id}"><span class="sw" style="--c:${opColour(code)}"></span><span class="nm">${opName(code)}${
-        disruptedOp(opName(code)) ? ` <span class="op-warn" title="${esc(disruptedOp(opName(code)).severity)}">⚠</span>` : ''
+        disruptedOp(opName(code)) ? ` <span class="op-warn" title="${esc(disruptedOp(opName(code)).severity)}">${ICON.warn}</span>` : ''
       }</span><span class="n">${perOp.get(code)}</span></label>`;
     li.querySelector('input').addEventListener('change', (e) => {
       if (e.target.checked) hidden.delete(code);
@@ -584,7 +597,7 @@ function renderDetailHeader() {
   if (!ab.hidden) {
     const on = alerts && alerts.has(selectedId);
     ab.setAttribute('aria-pressed', Boolean(on));
-    ab.textContent = on ? 'Alert on' : 'Alert me';
+    ab.innerHTML = on ? `${ICON.bell} Alert on` : `${ICON.bell} Alert me`;
   }
   if (isBus(selectedId)) return renderBusHeader();
   const v = trains.get(selectedId);
@@ -712,10 +725,13 @@ if (DEMO) {
   connect();
 }
 
+let offlineTimer = null;
 function connect() {
   setStatus('connecting', 'Connecting');
   const es = new EventSource(`${WORKER}/api/stream`);
   es.addEventListener('snapshot', (e) => {
+    clearTimeout(offlineTimer);
+    document.getElementById('offline').hidden = true;
     const d = JSON.parse(e.data);
     skew = d.now - Date.now();
     replaceAll(d.trains);
@@ -736,7 +752,12 @@ function connect() {
     skew = d.now - Date.now();
     setStatus(d.live ? 'live' : 'stale', d.live ? 'Live' : 'Feed reconnecting');
   });
-  es.onerror = () => setStatus('connecting', 'Reconnecting');
+  es.onerror = () => {
+    setStatus('connecting', 'Reconnecting');
+    // Still nothing after a while: say so plainly
+    clearTimeout(offlineTimer);
+    offlineTimer = setTimeout(() => (document.getElementById('offline').hidden = false), 20000);
+  };
 }
 
 // Re-render "x seconds ago" text
@@ -1035,7 +1056,7 @@ function renderBoardHead() {
   if (btn) {
     const on = isFav();
     btn.setAttribute('aria-pressed', on);
-    btn.textContent = on ? '★ Saved' : '☆ Save route';
+    btn.innerHTML = on ? `${ICON.starOn} Saved` : `${ICON.star} Save route`;
   }
 }
 
@@ -1049,8 +1070,8 @@ function expText(r) {
 function renderBoard(d) {
   lastBoard = d;
   const head = d.to
-    ? `<div class="b-head"><div class="b-title">${esc(short(d.to.name))}<small>Direct trains from ${esc(d.from.name)} · updated ${d.generated}</small></div><button class="b-save" type="button"></button></div>`
-    : `<div class="b-head"><div class="b-title">Departures<small>Every train from ${esc(d.from.name)} · updated ${d.generated}. Add a destination to narrow it down.</small></div></div>`;
+    ? `<div class="b-head"><div class="b-title">${esc(short(d.to.name))}<small>Direct trains from ${esc(d.from.name)} · ${fresh(Date.now())}</small></div><button class="b-save" type="button"></button></div>`
+    : `<div class="b-head"><div class="b-title">Departures<small>Every train from ${esc(d.from.name)} · ${fresh(Date.now())}. Add a destination to narrow it down.</small></div></div>`;
   let body;
   if (!d.rows.length) {
     body = d.to
@@ -1230,9 +1251,10 @@ const followBtn = document.getElementById('dFollow');
 function setFollow(id) {
   following = id;
   followBtn.setAttribute('aria-pressed', Boolean(id));
-  followBtn.textContent = id ? 'Following' : 'Follow';
+  followBtn.innerHTML = id ? `${ICON.follow} Following` : `${ICON.follow} Follow`;
 }
 followBtn.onclick = () => setFollow(following ? null : selectedId);
+setFollow(null); // shows the icon
 map.on('dragstart', () => following && setFollow(null)); // you moved the map yourself
 function keepInView(lat, lng, pt, size) {
   // Recentre gently when it drifts out of the middle of the screen
@@ -1325,6 +1347,8 @@ function setAlertsOpen(open) {
 
 const home = createHome({
   alerts: () => alerts,
+  icon: ICON,
+  fresh: (at) => fresh(at),
   commute: () => commuteStations(),
   openSetup: () => openSetup(),
   disruptionNote: (ops) => disruptionNote(ops),
@@ -1523,7 +1547,7 @@ function disruptionNote(ops) {
   const uniq = [...new Map(hit.map((l) => [l.id, l])).values()];
   if (!uniq.length) return '';
   return `<div class="h-dz">${uniq
-    .map((l) => `<p><b>⚠ ${esc(l.name)}: ${esc(l.severity)}</b>${l.reason ? `<small>${linkify(l.reason)}</small>` : ''}</p>`)
+    .map((l) => `<p><b>${ICON.warn} ${esc(l.name)}: ${esc(l.severity)}</b>${l.reason ? `<small>${linkify(l.reason)}</small>` : ''}</p>`)
     .join('')}</div>`;
 }
 
@@ -1599,15 +1623,15 @@ rpPlay.onclick = () => {
   if (rpTimer) {
     clearInterval(rpTimer);
     rpTimer = null;
-    rpPlay.textContent = '▶';
+    rpPlay.innerHTML = ICON.play;
     return;
   }
-  rpPlay.textContent = '❚❚';
+  rpPlay.innerHTML = ICON.pause;
   rpTimer = setInterval(() => {
     if (!replay || replay.ago <= 0) {
       clearInterval(rpTimer);
       rpTimer = null;
-      rpPlay.textContent = '▶';
+      rpPlay.innerHTML = ICON.play;
       return;
     }
     replay.ago -= 1;
@@ -1825,8 +1849,8 @@ function renderBusHeader() {
   }`;
   const fav = busFavs.includes(v.r);
   const onNow = mine.length && Date.now() - mine[0].at < RIDE_SAME_MS;
-  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? '★ Saved route' : '☆ Save route'}</button><button class="pill star" id="busRide" aria-pressed="${Boolean(onNow)}">${
-    onNow ? `✓ On board (ride ${mine.length})` : '🚌 I’m on this bus'
+  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? `${ICON.starOn} Saved route` : `${ICON.star} Save route`}</button><button class="pill star" id="busRide" aria-pressed="${Boolean(onNow)}">${
+    onNow ? `${ICON.check} On board (ride ${mine.length})` : `${ICON.bus} I’m on this bus`
   }</button>`;
   document.getElementById('busStar').onclick = () => toggleBusFav(v.r);
   document.getElementById('busRide').onclick = () => logRide(v);
@@ -1912,7 +1936,7 @@ const routeEnds = (id) => {
 function busRow(id) {
   const fav = busFavs.includes(id);
   const count = [...buses.values()].filter((o) => o.v.r === id).length;
-  return `<li><button class="bp-star" data-route="${esc(id)}" aria-pressed="${fav}" aria-label="${fav ? 'Remove' : 'Save'} route ${esc(routeName(id))}">${fav ? '★' : '☆'}</button>
+  return `<li><button class="bp-star" data-route="${esc(id)}" aria-pressed="${fav}" aria-label="${fav ? 'Remove' : 'Save'} route ${esc(routeName(id))}">${fav ? ICON.starOn : ICON.star}</button>
     <span class="bp-num">${esc(routeName(id))}</span><span class="bp-ends">${routeEnds(id)}</span>${fav && count ? `<span class="n">${count}</span>` : ''}</li>`;
 }
 
@@ -2007,7 +2031,7 @@ function renderMyBuses() {
   const el = document.getElementById('myBuses');
   if (!el) return;
   if (!rides.length) {
-    el.innerHTML = '<p class="bp-intro">When you’re on a bus, tap it on the map and choose <b>🚌 I’m on this bus</b>. Choo Choo remembers the bus itself (by its registration), so you’ll see when you get the same one again. Buses you’ve ridden show a gold dot on the map.</p>';
+    el.innerHTML = '<p class="bp-intro">When you’re on a bus, tap it on the map and choose <b>I’m on this bus</b>. Choo Choo remembers the bus itself (by its registration), so you’ll see when you get the same one again. Buses you’ve ridden show a gold dot on the map.</p>';
     return;
   }
   const byReg = new Map();
@@ -2025,7 +2049,7 @@ function renderMyBuses() {
     <p class="mb-sum"><b>${rides.length}</b> ${rides.length === 1 ? 'ride' : 'rides'} on <b>${byReg.size}</b> different ${byReg.size === 1 ? 'bus' : 'buses'}${
       repeat ? ` · <b>${repeat}</b> you’ve had more than once` : ''
     }</p>
-    ${onMap.length ? `<p class="mb-near">🚌 ${onMap.map((b) => `<b>${esc(b.reg)}</b>`).join(', ')} ${onMap.length === 1 ? 'is' : 'are'} on the map right now</p>` : ''}
+    ${onMap.length ? `<p class="mb-near">${ICON.bus} ${onMap.map((b) => `<b>${esc(b.reg)}</b>`).join(', ')} ${onMap.length === 1 ? 'is' : 'are'} on the map right now</p>` : ''}
     <ul class="bp-list mb-list">${top
       .slice(0, 12)
       .map(
@@ -2142,9 +2166,9 @@ function renderStopHeader() {
     .sort((a, b) => a[0].localeCompare(b[0], 'en', { numeric: true }))
     .map(([rt, ms]) => `<span class="rt-sum"><span class="bp-num">${esc(rt)}</span>${ms.map(esc).join(', ')}${ms.length && ms[ms.length - 1] !== 'due' ? ' min' : ''}</span>`)
     .join('');
-  dState.innerHTML = `<button class="pill star" id="stopStar" aria-pressed="${fav}">${fav ? '★ Saved stop' : '☆ Save stop'}</button>${summary ? `<span class="rt-sums">${summary}</span>` : ''}`;
+  dState.innerHTML = `<button class="pill star" id="stopStar" aria-pressed="${fav}">${fav ? `${ICON.starOn} Saved stop` : `${ICON.star} Save stop`}</button>${summary ? `<span class="rt-sums">${summary}</span>` : ''}`;
   document.getElementById('stopStar').onclick = () => toggleStopFav(id, d ? d.name : id);
-  dFoot.textContent = 'Live times from TfL. Bus details from TfL’s fleet list.';
+  dFoot.innerHTML = `Live times from TfL · ${d ? fresh(d.at - skew) : ''}`;
   dFoot.classList.add('tiny');
 }
 
@@ -2213,7 +2237,7 @@ function renderStopFavs() {
   const el = document.getElementById('busStopFavs');
   el.innerHTML = stopFavs.length
     ? favStopsHtml(3)
-    : '<p class="bp-intro">Zoom right in on the map to see bus stops, tap one, then ☆ Save stop. Its next buses show here and on Home.</p>';
+    : '<p class="bp-intro">Zoom right in on the map to see bus stops, tap one, then Save stop. Its next buses show here and on Home.</p>';
 }
 for (const id of ['busStopFavs', 'stopsNear']) {
   document.getElementById(id).addEventListener('click', (e) => {
@@ -2430,14 +2454,26 @@ function renderSaved() {
       commute
         ? `<b>${esc(short(commute.home.n))}</b> <span>and</span> <b>${esc(short(commute.work.n))}</b><button class="h-link" type="button" data-go="setup">Change</button>`
         : `<span>Not set yet.</span><button class="h-link" type="button" data-go="setup">Set your stations</button>`
-    }</div>
-    ${section('Train routes', trainRoutes, 'Save a route from a departures board with ☆ Save route.')}
+    }</div>${
+      commute
+        ? `<div class="ly-row sv-auto"><span><b>Watch my commute train</b><small>Weekdays, 6–10am from home and 4–8pm from work: Choo Choo picks your next good train and alerts you about it.</small></span><button class="switch" type="button" role="switch" id="autoSwitch" aria-checked="${alerts.autoOn()}" aria-label="Watch my commute train automatically"></button></div>`
+        : ''
+    }
+    ${section('Train routes', trainRoutes, 'Save a route from a departures board with Save route.')}
     ${section('Bus routes', busRoutesL, 'Save a bus route from Ding Ding, or from a bus on the map.')}
-    ${section('Bus stops', stopsL, 'Tap a stop on the map, or find one in Ding Ding, then ☆ Save stop.')}`;
+    ${section('Bus stops', stopsL, 'Tap a stop on the map, or find one in Ding Ding, then Save stop.')}`;
 }
-document.getElementById('savedBody').addEventListener('click', (e) => {
+document.getElementById('savedBody').addEventListener('click', async (e) => {
   const b = e.target.closest('button');
   if (!b) return;
+  if (b.id === 'autoSwitch') {
+    const c = store.get('commute', null);
+    const on = b.getAttribute('aria-checked') !== 'true';
+    b.setAttribute('aria-checked', on); // straight away; put back if it didn't work
+    const ok = await alerts.setAuto(on, c && c.home, c && c.work);
+    if (!ok) b.setAttribute('aria-checked', !on);
+    return;
+  }
   if (b.dataset.rm === 'route') {
     const [f, t] = b.dataset.key.split('|');
     favs = favs.filter((x) => !(x.f === f && x.t === t));

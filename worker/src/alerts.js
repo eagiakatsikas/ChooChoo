@@ -44,6 +44,7 @@ export function startAlerts({ check = true } = {}) {
   try {
     store = JSON.parse(fs.readFileSync(file(), 'utf8'));
     store.watches ||= [];
+    store.autos ||= [];
   } catch {}
   if (!store.vapid) {
     // Keys that identify this server to the phones' push services; made once and kept
@@ -52,7 +53,11 @@ export function startAlerts({ check = true } = {}) {
   }
   webpush.setVapidDetails('mailto:choochoo@example.invalid', store.vapid.publicKey, store.vapid.privateKey);
   alertState.watches = store.watches.length;
-  if (check) setInterval(() => checkAll().catch((err) => (alertState.lastError = err.message)), CHECK_MS);
+  store.autos ||= [];
+  if (check) {
+    setInterval(() => checkAll().catch((err) => (alertState.lastError = err.message)), CHECK_MS);
+    setInterval(() => checkAutos().catch((err) => (alertState.lastError = err.message)), 60000);
+  }
 }
 
 export const publicKey = () => store.vapid?.publicKey || null;
@@ -74,7 +79,7 @@ const stationName = (tiploc) => {
   return (crs && ref.stations.get(crs)?.name) || ref.coords.get(tiploc)?.name || tiploc;
 };
 
-export function addWatch({ sub, train, crs }) {
+export function addWatch({ sub, train, crs, auto = false }) {
   if (!sub || !sub.endpoint || !sub.keys) return { error: 'Missing push subscription' };
   const run = sched.runs.get(train);
   if (!run) return { error: 'Unknown train' };
@@ -99,7 +104,12 @@ export function addWatch({ sub, train, crs }) {
   };
   store.watches.push(w);
   save();
-  send(w, { title: 'Alert set', body: `We’ll tell you about the ${label}: platform, delays and cancellations.` });
+  send(
+    w,
+    auto
+      ? { title: `Watching your ${label.split(' ')[0]}`, body: `Your commute train, the ${label}. We’ll tell you about its platform, delays and cancellations.` }
+      : { title: 'Alert set', body: `We’ll tell you about the ${label}: platform, delays and cancellations.` },
+  );
   return { id: w.id, label, key: train };
 }
 
@@ -214,4 +224,67 @@ export async function checkAll(now = Date.now()) {
     changed = true;
   }
   if (changed) save();
+}
+
+
+// ---------- Your commute train, watched automatically ----------
+// On weekdays, mornings (from home) and late afternoons (from work), the worker picks the
+// best direct train leaving in the next 10–40 minutes and watches it for you.
+const WINDOWS = [
+  { from: 'home', to: 'work', start: 6 * 60, end: 10 * 60 },
+  { from: 'work', to: 'home', start: 16 * 60, end: 20 * 60 },
+];
+
+export function setAuto({ sub, home, work, on }) {
+  if (!sub || !sub.endpoint) return { error: 'Missing push subscription' };
+  store.autos = (store.autos || []).filter((a) => a.sub.endpoint !== sub.endpoint);
+  if (on) {
+    if (!ref.stations.has(home) || !ref.stations.has(work)) return { error: 'Unknown station' };
+    store.autos.push({ sub, home, work, last: {} });
+  }
+  save();
+  return { ok: true, on: Boolean(on) };
+}
+
+export function autoFor(endpoint) {
+  return (store.autos || []).some((a) => a.sub.endpoint === endpoint);
+}
+
+/** Which window (if any) it is now, London time, on a weekday. */
+export function commuteWindow(now = Date.now()) {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const get = (t) => p.find((x) => x.type === t)?.value;
+  if (['Sat', 'Sun'].includes(get('weekday'))) return null;
+  const m = Number(get('hour')) * 60 + Number(get('minute'));
+  const w = WINDOWS.find((x) => m >= x.start && m < x.end);
+  return w ? { ...w, day: new Date(now).toISOString().slice(0, 10) } : null;
+}
+
+export async function checkAutos(now = Date.now()) {
+  const win = commuteWindow(now);
+  if (!win || !(store.autos || []).length) return;
+  for (const a of store.autos) {
+    const key = `${win.day}|${win.from}`;
+    if (a.last[key]) continue; // already picked one for this morning / evening
+    const from = a[win.from], to = a[win.to];
+    let b;
+    try {
+      b = await board(from, to);
+    } catch {
+      continue;
+    }
+    const nowMin = (h) => {
+      const [hh, mm] = h.split(':').map(Number);
+      const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+      let d = hh * 60 + mm - (Number(p.find((x) => x.type === 'hour').value) * 60 + Number(p.find((x) => x.type === 'minute').value));
+      if (d < -720) d += 1440;
+      return d;
+    };
+    const soon = (b.rows || []).filter((r) => r.id && !r.cancelled && nowMin(r.etdTime || r.std) >= 10 && nowMin(r.etdTime || r.std) <= 40);
+    const pick = soon.find((r) => r.best) || soon[0];
+    if (!pick) continue;
+    a.last = { [key]: pick.id }; // keep just today's
+    addWatch({ sub: a.sub, train: pick.id, crs: from, auto: true });
+  }
+  save();
 }

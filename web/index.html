@@ -36,6 +36,7 @@
       </button>
     </header>
 
+    <p class="offline" id="offline" hidden>Can’t reach Choo Choo’s server just now. It may be restarting; retrying…</p>
     <div class="map-fabs" role="group" aria-label="Map tools">
       <button class="fab" id="layersBtn" type="button" aria-expanded="false" aria-controls="layers" aria-label="Map layers" title="Map layers">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>
@@ -49,7 +50,7 @@
     </div>
     <button class="zoom-hint" id="zoomHint" type="button" hidden>Zoom in to see every bus</button>
     <div class="replay-bar" id="replayBar" hidden>
-      <button class="rp-play" id="rpPlay" type="button" aria-label="Play">▶</button>
+      <button class="rp-play" id="rpPlay" type="button" aria-label="Play"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg></button>
       <input id="rpSlider" type="range" min="0" max="60" step="1" value="60" aria-label="Minutes ago" />
       <span class="rp-time" id="rpTime">Live</span>
       <button class="rp-live" id="rpLive" type="button">Back to live</button>

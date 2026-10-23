@@ -24,3 +24,11 @@ test('alerts: running late, later still, back on time, cancelled', () => {
   assert.equal(changes(w({ plat: null, delay: 10 }), { delay: 0, expected: t })[0].title, 'Back on time');
   assert.equal(changes(w({ plat: '5', delay: 0 }), { cancelled: true })[0].title, 'Cancelled');
 });
+
+test('commute windows: weekday mornings and late afternoons, London time', async () => {
+  const { commuteWindow } = await import('../src/alerts.js');
+  assert.equal(commuteWindow(Date.parse('2026-10-22T07:30:00Z')).from, 'home'); // Thu 08:30 BST
+  assert.equal(commuteWindow(Date.parse('2026-10-22T16:00:00Z')).from, 'work'); // Thu 17:00 BST
+  assert.equal(commuteWindow(Date.parse('2026-10-22T11:00:00Z')), null); // midday
+  assert.equal(commuteWindow(Date.parse('2026-10-24T07:30:00Z')), null); // Saturday
+});

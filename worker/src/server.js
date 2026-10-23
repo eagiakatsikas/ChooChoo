@@ -8,7 +8,7 @@ import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
 import { busState, busesFor, busDetail, routeList, routeShapes, busTo, stopsIn, stopsNear, stopsNamed, stopBoard } from './buses.js';
-import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
+import { alertState, publicKey, addWatch, removeWatch, listWatches, setAuto, autoFor } from './alerts.js';
 import { record, frameAt, replayInfo } from './replay.js';
 import { euroViews, euroDetail, euroState } from './eurostar.js';
 import { getThere } from './getthere.js';
@@ -173,6 +173,7 @@ export function startServer() {
           }
           if (url.pathname === '/api/alerts/remove') return json(res, 200, removeWatch(body.id, body.endpoint));
           if (url.pathname === '/api/alerts/list') return json(res, 200, listWatches(body.endpoint));
+          if (url.pathname === '/api/alerts/auto') return json(res, 200, body.check ? { on: autoFor(body.endpoint) } : setAuto(body));
           json(res, 404, { error: 'not found' });
         })
         .catch((err) => json(res, 400, { error: err.message }));

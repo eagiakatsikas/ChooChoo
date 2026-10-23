@@ -126,7 +126,7 @@ export function createHome(ctx) {
     const legText = (o) =>
       o.legs
         .filter((l) => l.mode !== 'walking' || l.mins >= 5)
-        .map((l) => (l.mode === 'walking' ? `walk ${l.mins} min` : `${esc(l.name)} from ${esc(l.from.replace(/ (Underground|Rail|DLR|Overground) Station$/i, ''))}${l.disrupted ? ' ⚠' : ''}`))
+        .map((l) => (l.mode === 'walking' ? `walk ${l.mins} min` : `${esc(l.name)} from ${esc(l.from.replace(/ (Underground|Rail|DLR|Overground) Station$/i, ''))}${l.disrupted ? ` ${ctx.icon ? ctx.icon.warn : '!'}` : ''}`))
         .join(' → ');
     return `<div class="h-bus"><h3 class="h-head">Getting to ${esc(ctx.short(st.n))}</h3><ul>${tr.options
       .map((o) => `<li><span class="h-mins">${o.mins}<small>min</small></span><span><b>${esc(o.summary)}</b><small>${legText(o) || 'Walk all the way'}</small></span></li>`)
@@ -207,7 +207,7 @@ export function createHome(ctx) {
     try {
       const res = await fetch(`${ctx.WORKER}/api/board?from=${from}&to=${to}`);
       const d = await res.json();
-      if (!d.error) boards.set(`${from}|${to}`, d);
+      if (!d.error) boards.set(`${from}|${to}`, { ...d, _at: Date.now() });
     } catch {}
   }
 
@@ -275,7 +275,7 @@ export function createHome(ctx) {
       html += `<section class="h-card">
         <div class="h-route">
           <div><small>Your commute</small><b>${esc(ctx.short(c.from.n))} → ${esc(ctx.short(c.to.n))}</b></div>
-          <button class="h-swap" type="button" aria-label="Swap direction" title="Swap direction">⇄</button>
+          <button class="h-swap" type="button" aria-label="Swap direction" title="Swap direction">${ctx.icon ? ctx.icon.swap : '⇄'}</button>
         </div>
         <p class="h-why">This way round because ${c.why}.${tr ? ` About ${esc(tr.text)} to ${esc(ctx.short(c.from.n))}.` : ''}</p>`;
       if (!d) html += '<p class="b-empty">Checking departures…</p>';
@@ -305,7 +305,7 @@ export function createHome(ctx) {
         ${leaveLine(d.rows, best, tr)}
         ${best.id && ctx.alerts() ? `<button class="h-alert" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${ctx.alerts().has(best.id)}">${ctx.alerts().has(best.id) ? 'Alert on for this train' : `Alert me about the ${esc(best.std)}`}</button>` : ''}
         <div class="board h-board">${rows.map((r) => trainRow(r, walk).html).join('')}</div>
-        <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail.' : 'Timetabled platforms until the station announces them.'} Tap a train to see it on the map.</p>`;
+        <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail' : 'Timetabled platforms until the station announces them'} · ${ctx.fresh ? ctx.fresh(d._at || Date.now()) : ''}</p>`;
       }
       html += `<div class="h-more"><button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full departures board</button><button class="h-link" type="button" data-board="${c.from.c}|">All trains from ${esc(ctx.short(c.from.n))}</button></div>`;
       html += '</section>';

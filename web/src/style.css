@@ -2782,3 +2782,113 @@ body:not([data-tab='map']) .zoom-hint {
 .fold .h-dz {
   margin-top: 0;
 }
+.sv-auto {
+  border-bottom: 0;
+}
+.sv-auto small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.offline {
+  position: fixed;
+  z-index: 1001;
+  left: 12px;
+  right: 12px;
+  top: calc(var(--bar-h, 70px) + 8px);
+  margin: 0 auto;
+  max-width: 460px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #4a2a1f;
+  border: 1px solid #8a4a35;
+  color: #f6d5c8;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+.offline[hidden] {
+  display: none;
+}
+
+/* ===================== Consistency: one style of small action button ===================== */
+.pill.star,
+.d-follow,
+.h-alert,
+.b-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.pill.star .ic,
+.d-follow .ic,
+.h-alert .ic,
+.b-save .ic {
+  width: 15px;
+  height: 15px;
+}
+.op-warn .ic {
+  width: 14px;
+  height: 14px;
+  color: #f1d48a;
+}
+.h-dz .ic {
+  width: 14px;
+  height: 14px;
+}
+.h-swap .ic {
+  width: 20px;
+  height: 20px;
+}
+.h-swap {
+  display: grid;
+  place-items: center;
+}
+.mb-near .ic {
+  width: 15px;
+  height: 15px;
+}
+.rp-play .ic {
+  width: 18px;
+  height: 18px;
+}
+.rp-play {
+  display: grid;
+  place-items: center;
+}
+/* Detail panel buttons sit together in one row */
+.detail .panel-head {
+  gap: 6px;
+}
+.detail .d-op {
+  margin-right: auto;
+}
+.d-follow {
+  margin: -2px 0 0;
+}
+/* Panel headings and spacing match everywhere */
+.panel .panel-head h2 {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.bp-head,
+.sv-head,
+.h-head {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

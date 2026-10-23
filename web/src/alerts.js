@@ -150,7 +150,38 @@ export function createAlerts(ctx) {
     }
   });
 
+  /** Turn automatic commute alerts on or off (weekday mornings and evenings). */
+  async function setAuto(on, home, work) {
+    if (on) {
+      const b = blocker();
+      if (b) {
+        note = b;
+        render();
+        return false;
+      }
+    }
+    try {
+      const sub = await subscription(on);
+      if (!sub) return on ? false : (ctx.store.set('autoAlerts', false), true);
+      const res = await fetch(`${ctx.WORKER}/api/alerts/auto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sub: sub.toJSON(), home, work, on }),
+      });
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
+      ctx.store.set('autoAlerts', Boolean(on));
+      return true;
+    } catch (err) {
+      note = err.message === 'denied' ? 'You said no to notifications, so alerts can’t be sent.' : `Couldn’t change that: ${err.message}`;
+      render();
+      return false;
+    }
+  }
+
   return {
+    setAuto,
+    autoOn: () => ctx.store.get('autoAlerts', false),
     watch,
     remove,
     sync,
