@@ -2170,3 +2170,37 @@ body.replaying .toggles {
   text-underline-offset: 2px;
   word-break: break-word;
 }
+
+/* All routes due at a stop, at a glance */
+.rt-sums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  width: 100%;
+  margin-top: 4px;
+}
+.rt-sum {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.rt-sum .bp-num {
+  min-width: 32px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+#stopSearch {
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 9px 12px;
+  background: var(--berth);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 16px;
+}
+#stopResults li {
+  display: block;
+  border-bottom: 1px solid #2c4539;
+}

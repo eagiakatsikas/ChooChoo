@@ -45,6 +45,8 @@ export const lines = new Map();
 /** vehicleId → { id, line, dir, dest, preds: [[naptanId, epochMs], …] sorted, seen } */
 export const vehicles = new Map();
 const wanted = new Map(); // lineId → last asked for (ms)
+const wantedVeh = new Map(); // registration → last asked for (buses you've ridden, wherever they are)
+const vehPolledAt = new Map();
 const polledAt = new Map(); // lineId → last polled (ms)
 
 // ---------- TfL requests, paced ----------
@@ -232,7 +234,7 @@ export async function loadRoutes() {
 // ---------- Live predictions ----------
 
 /** Fold TfL arrival predictions into the vehicle list. */
-export function ingestArrivals(list, lineIds, now = Date.now()) {
+export function ingestArrivals(list, lineIds, now = Date.now(), regs = null) {
   const seen = new Set();
   const fresh = new Map();
   for (const a of list) {
@@ -257,9 +259,10 @@ export function ingestArrivals(list, lineIds, now = Date.now()) {
     }
     vehicles.set(v.id, v);
   }
-  // Buses on these routes that have dropped out of the predictions have finished
+  // Buses on these routes (or these buses) that have dropped out of the predictions have finished
   const set = new Set(lineIds);
-  for (const [id, v] of vehicles) if (set.has(v.line) && !seen.has(id)) vehicles.delete(id);
+  const regSet = new Set(regs || []);
+  for (const [id, v] of vehicles) if ((set.has(v.line) || regSet.has(id)) && !seen.has(id)) vehicles.delete(id);
   busState.vehicles = vehicles.size;
 }
 
@@ -392,18 +395,21 @@ export function busView(v, now = Date.now()) {
  * Buses for the map: every bus on the given routes, plus (with a box) every bus in it.
  * Asking also keeps those routes' predictions fresh for the next few minutes.
  */
-export function busesFor({ routes = [], box = null }, now = Date.now()) {
+export function busesFor({ routes = [], box = null, regs = [] }, now = Date.now()) {
   const ids = new Set(routes.map((r) => String(r).toLowerCase()).filter((r) => lines.has(r)));
+  const regSet = new Set(regs.map((r) => String(r).replace(/\s/g, '').toUpperCase()).filter((r) => /^[A-Z0-9]{2,8}$/.test(r)).slice(0, 60));
+  for (const r of regSet) wantedVeh.set(r, now);
   let inBox = [];
   if (box && box.every(Number.isFinite) && box[2] - box[0] < 0.25 && box[3] - box[1] < 0.4) inBox = linesInBox(box);
   want([...ids, ...inBox], now);
   const all = new Set([...ids, ...inBox]);
   const out = [];
   for (const v of vehicles.values()) {
-    if (!all.has(v.line)) continue;
+    const mine = regSet.has(v.id); // a bus you've ridden: shown wherever it is
+    if (!all.has(v.line) && !mine) continue;
     const b = busView(v, now);
     if (!b) continue;
-    if (!ids.has(v.line) && box && (b.la < box[0] || b.la > box[2] || b.lo < box[1] || b.lo > box[3])) continue;
+    if (!mine && !ids.has(v.line) && box && (b.la < box[0] || b.la > box[2] || b.lo < box[1] || b.lo > box[3])) continue;
     out.push(b);
     if (out.length >= 2500) break;
   }
@@ -479,8 +485,22 @@ async function pollOnce() {
       console.error('[buses]', err.message);
     }
   }
+  // Buses you've ridden, wherever they are today (TfL looks them up by registration)
+  for (const [id, at] of wantedVeh) if (now - at > ACTIVE_MS) wantedVeh.delete(id);
+  const dueVeh = [...wantedVeh.keys()].filter((id) => now - (vehPolledAt.get(id) || 0) >= POLL_MS);
+  for (let i = 0; i < dueVeh.length; i += 20) {
+    const regs = dueVeh.slice(i, i + 20);
+    try {
+      const list = await tfl(`/Vehicle/${regs.map(encodeURIComponent).join(',')}/Arrivals`);
+      ingestArrivals(Array.isArray(list) ? list : [], [], Date.now(), regs);
+      for (const r of regs) vehPolledAt.set(r, Date.now());
+    } catch (err) {
+      busState.lastError = err.message;
+    }
+  }
+  for (const id of vehPolledAt.keys()) if (!wantedVeh.has(id)) vehPolledAt.delete(id);
   // Forget buses on routes nobody is looking at any more
-  for (const [id, v] of vehicles) if (!wanted.has(v.line)) vehicles.delete(id);
+  for (const [id, v] of vehicles) if (!wanted.has(v.line) && !wantedVeh.has(id)) vehicles.delete(id);
   for (const id of polledAt.keys()) if (!wanted.has(id)) polledAt.delete(id);
   busState.vehicles = vehicles.size;
 }
@@ -600,6 +620,23 @@ export function stopsIn([s, w, n, e]) {
   return out;
 }
 
+/** Stops whose name matches, e.g. "waterloo" or "raynes park station". */
+export function stopsNamed(q, count = 12) {
+  q = String(q || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  const out = [];
+  for (const st of stopIndex.values()) {
+    const n = st.name.toLowerCase();
+    const at = n.indexOf(q);
+    if (at < 0) continue;
+    out.push([at === 0 ? 0 : 1, n.length, st]);
+  }
+  return out
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .slice(0, count)
+    .map(([, , st]) => ({ i: st.id, n: st.name, la: st.la, lo: st.lo, r: [...st.routes].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) }));
+}
+
 /** The nearest few stops to a point. */
 export function stopsNear(la, lo, count = 6) {
   const all = [];
@@ -633,8 +670,7 @@ export async function stopBoard(id, now = Date.now()) {
       };
     })
     .filter((r) => r.t >= now - 60000)
-    .sort((a, b) => a.t - b.t)
-    .slice(0, 16);
+    .sort((a, b) => a.t - b.t);
   const any = list[0];
   return {
     id,

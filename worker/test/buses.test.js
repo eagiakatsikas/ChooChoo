@@ -101,3 +101,17 @@ test('bus stops: indexed from the routes, found in a box and near a point', asyn
   assert.ok(['S0', 'S0i'].includes(near[0].i));
   assert.ok(near[0].d < 50);
 });
+
+test('buses you have ridden are shown wherever they are, and found by registration', async () => {
+  const { ingestArrivals, busesFor, stopsNamed, vehicles: vs } = await import('../src/buses.js');
+  const now = Date.parse('2026-10-22T14:00:00Z');
+  const pred = (stop, min) => ({ vehicleId: 'LX99RID', naptanId: stop, lineId: '93', lineName: '93', direction: 'outbound', destinationName: 'Stop 4', expectedArrival: new Date(now + min * 60000).toISOString() });
+  ingestArrivals([pred('S2', 1), pred('S3', 3)], [], now, ['LX99RID']);
+  // Not a favourite route, nowhere near the view: still shown because you've ridden it
+  const r = busesFor({ regs: ['lx99rid'], box: [51.5, -0.1, 51.52, -0.08] }, now);
+  assert.equal(r.buses.length, 1);
+  assert.equal(r.buses[0].id, 'LX99RID');
+  ingestArrivals([], [], now, ['LX99RID']); // off the road now
+  assert.ok(!vs.has('LX99RID'));
+  assert.deepEqual(stopsNamed('stop 2').map((x) => x.n), ['Stop 2 (A)', 'Stop 2 (A)']);
+});

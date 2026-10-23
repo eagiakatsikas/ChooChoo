@@ -7,7 +7,7 @@ import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
 import { board, stationList, ldbState } from './board.js';
 import { ref } from './reference.js';
-import { busState, busesFor, busDetail, routeList, routeShapes, busTo, stopsIn, stopsNear, stopBoard } from './buses.js';
+import { busState, busesFor, busDetail, routeList, routeShapes, busTo, stopsIn, stopsNear, stopsNamed, stopBoard } from './buses.js';
 import { alertState, publicKey, addWatch, removeWatch, listWatches } from './alerts.js';
 import { record, frameAt, replayInfo } from './replay.js';
 import { euroViews, euroDetail, euroState } from './eurostar.js';
@@ -141,9 +141,10 @@ export function startServer() {
     if (url.pathname === '/api/buses') {
       // ?r=57,93 (routes, anywhere) &b=south,west,north,east (every bus in a zoomed-in view)
       const routes = (url.searchParams.get('r') || '').split(',').filter(Boolean).slice(0, 40);
+      const regs = (url.searchParams.get('v') || '').split(',').filter(Boolean).slice(0, 60);
       const b = url.searchParams.get('b');
       const box = b ? b.split(',').map(Number) : null;
-      return json(res, 200, busesFor({ routes, box: box && box.length === 4 ? box : null }));
+      return json(res, 200, busesFor({ routes, regs, box: box && box.length === 4 ? box : null }));
     }
     if (url.pathname.startsWith('/api/bus/')) {
       const d = busDetail(decodeURIComponent(url.pathname.slice('/api/bus/'.length)));
@@ -201,6 +202,7 @@ export function startServer() {
     }
     if (url.pathname === '/api/stops') {
       // Bus stops in a zoomed-in view (?b=s,w,n,e) or near a point (?la=&lo=)
+      if (url.searchParams.get('q')) return json(res, 200, stopsNamed(url.searchParams.get('q')));
       const b = (url.searchParams.get('b') || '').split(',').map(Number);
       if (b.length === 4 && b.every(Number.isFinite)) return json(res, 200, stopsIn(b));
       const la = Number(url.searchParams.get('la'));

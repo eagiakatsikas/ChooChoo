@@ -1566,6 +1566,11 @@ function busPos(o, t) {
 function busQuery() {
   const q = new URLSearchParams();
   if (busFavs.length) q.set('r', busFavs.join(','));
+  // Buses you've ridden, wherever they are today (most recent first)
+  if (store.get('showRidden', true)) {
+    const regs = [...new Set(store.get('rides', []).map((x) => x.reg))].slice(0, 60);
+    if (regs.length) q.set('v', regs.join(','));
+  }
   if (busesOn && map.getZoom() >= BUS_ZOOM) {
     const b = map.getBounds().pad(0.15);
     q.set('b', [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => x.toFixed(4)).join(','));
@@ -1978,7 +1983,7 @@ document.getElementById('myBuses').addEventListener('click', (e) => {
 renderMyBuses();
 
 // ---------- Bus stops: tap one for what's due, save your favourites ----------
-const STOP_ZOOM = 16;
+const STOP_ZOOM = 15;
 let mapStops = []; // [{ i, n, la, lo, r }] in the current view
 let drawnStops = [];
 let stopFavs = store.get('busStopFavs', []); // [{ i, n }]
@@ -2061,7 +2066,14 @@ function renderStopHeader() {
   dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>${d ? esc(d.routes.join(', ')) : ''}`;
   dRoute.textContent = d ? d.name : 'Bus stop';
   dFrom.textContent = d && d.towards ? `Towards ${d.towards}` : '';
-  dState.innerHTML = `<button class="pill star" id="stopStar" aria-pressed="${fav}">${fav ? '★ Saved stop' : '☆ Save stop'}</button>`;
+  // Every route due here, with all its times, at a glance
+  const byRoute = new Map();
+  for (const r of d ? d.rows : []) (byRoute.get(r.route) || byRoute.set(r.route, []).get(r.route)).push(r.m <= 0 ? 'due' : `${r.m}`);
+  const summary = [...byRoute]
+    .sort((a, b) => a[0].localeCompare(b[0], 'en', { numeric: true }))
+    .map(([rt, ms]) => `<span class="rt-sum"><span class="bp-num">${esc(rt)}</span>${ms.map(esc).join(', ')}${ms.length && ms[ms.length - 1] !== 'due' ? ' min' : ''}</span>`)
+    .join('');
+  dState.innerHTML = `<button class="pill star" id="stopStar" aria-pressed="${fav}">${fav ? '★ Saved stop' : '☆ Save stop'}</button>${summary ? `<span class="rt-sums">${summary}</span>` : ''}`;
   document.getElementById('stopStar').onclick = () => toggleStopFav(id, d ? d.name : id);
   dFoot.textContent = 'Live times from TfL. Bus details from TfL’s fleet list.';
   dFoot.classList.add('tiny');
@@ -2276,6 +2288,37 @@ document.addEventListener('visibilitychange', () => {
     navigator.geolocation.clearWatch(meWatch);
     meWatch = null;
   } else if (document.visibilityState === 'visible' && me) startMe(false);
+});
+
+// Find a stop by name
+const stopSearch = document.getElementById('stopSearch');
+let stopSearchTimer = null;
+stopSearch.addEventListener('input', () => {
+  clearTimeout(stopSearchTimer);
+  const q = stopSearch.value.trim();
+  const out = document.getElementById('stopResults');
+  if (q.length < 2) return (out.innerHTML = '');
+  stopSearchTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`${WORKER}/api/stops?q=${encodeURIComponent(q)}`);
+      const list = await res.json();
+      out.innerHTML = list.length
+        ? list
+            .map((st) => `<li><button class="sf-head" type="button" data-stop="${esc(st.i)}" data-la="${st.la}" data-lo="${st.lo}"><b>${esc(st.n)}</b><small>${esc(st.r.join(', '))}</small></button></li>`)
+            .join('')
+        : '<li class="bp-empty">No stop with that name</li>';
+    } catch {}
+  }, 250);
+});
+document.getElementById('stopResults').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-stop]');
+  if (b) openStop(b.dataset.stop, Number(b.dataset.la), Number(b.dataset.lo));
+});
+const showRidden = document.getElementById('showRidden');
+showRidden.checked = store.get('showRidden', true);
+showRidden.addEventListener('change', () => {
+  store.set('showRidden', showRidden.checked);
+  pollBuses();
 });
 
 window.chooStarted = true;
