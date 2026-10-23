@@ -29,16 +29,25 @@
       <p class="status" id="status" data-state="connecting">
         <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
       </p>
+      <button class="dz-badge" id="disruptPill" type="button" hidden aria-label="Disruption"></button>
       <p class="count" id="count"></p>
+      <button class="hdr-search" id="searchOpen" type="button" aria-label="Search" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      </button>
     </header>
 
-    <button class="disrupt-pill" id="disruptPill" type="button" hidden></button>
-    <button class="replay-btn locate-btn" id="locateBtn" type="button" aria-pressed="false" aria-label="Show where I am" title="Show where I am">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
-    </button>
-    <button class="replay-btn" id="replayBtn" type="button" aria-pressed="false" aria-label="Replay the last hour" title="Replay the last hour">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>
-    </button>
+    <div class="map-fabs" role="group" aria-label="Map tools">
+      <button class="fab" id="layersBtn" type="button" aria-expanded="false" aria-controls="layers" aria-label="Map layers" title="Map layers">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>
+      </button>
+      <button class="fab" id="locateBtn" type="button" aria-pressed="false" aria-label="Show where I am" title="Show where I am">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
+      </button>
+      <button class="fab" id="replayBtn" type="button" aria-pressed="false" aria-label="Replay the last hour" title="Replay the last hour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>
+      </button>
+    </div>
+    <button class="zoom-hint" id="zoomHint" type="button" hidden>Zoom in to see every bus</button>
     <div class="replay-bar" id="replayBar" hidden>
       <button class="rp-play" id="rpPlay" type="button" aria-label="Play">▶</button>
       <input id="rpSlider" type="range" min="0" max="60" step="1" value="60" aria-label="Minutes ago" />
@@ -46,27 +55,49 @@
       <button class="rp-live" id="rpLive" type="button">Back to live</button>
     </div>
 
-    <div class="basemap-switch" role="group" aria-label="Map style">
-      <button data-basemap="map" aria-pressed="true">Map</button>
-      <button data-basemap="dark" aria-pressed="false">Dark</button>
-      <button data-basemap="satellite" aria-pressed="false">Satellite</button>
-    </div>
-
-    <div class="toggles">
-      <button class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filters">
-        Operators <span id="filterSummary"></span>
+    <aside class="panel sheet layers" id="layers" hidden aria-label="Map layers">
+      <div class="panel-head">
+        <h2>Map</h2>
+        <button class="close" id="layersClose" aria-label="Close">×</button>
+      </div>
+      <div class="ly-row">
+        <span class="ly-label"><span class="lk train" aria-hidden="true"></span>Trains</span>
+        <button class="switch" id="layerTrains" type="button" role="switch" aria-checked="true" aria-label="Show trains"></button>
+      </div>
+      <div class="ly-row ly-col">
+        <span class="ly-label"><span class="lk bus" aria-hidden="true"></span>Buses</span>
+        <div class="seg seg3" role="group" aria-label="Which buses">
+          <button data-busmode="off" aria-pressed="false">Off</button>
+          <button data-busmode="mine" aria-pressed="true">Mine</button>
+          <button data-busmode="all" aria-pressed="false">All</button>
+        </div>
+        <small class="ly-hint" id="busModeHint"></small>
+      </div>
+      <div class="ly-row ly-col">
+        <span class="ly-label">Colour trains by</span>
+        <div class="seg" role="group" aria-label="Colour trains by">
+          <button data-colour="delay" aria-pressed="true">Delay</button>
+          <button data-colour="op" aria-pressed="false">Operator</button>
+        </div>
+      </div>
+      <button class="ly-link" id="filterToggle" type="button" aria-expanded="false" aria-controls="filters">
+        <span>Operators</span><span class="ly-sum" id="filterSummary">All</span>
       </button>
-      <button class="filter-toggle layer" id="layerTrains" aria-pressed="true"><span class="lk train" aria-hidden="true"></span>Trains</button>
-      <button class="filter-toggle layer" id="layerBuses" aria-pressed="true"><span class="lk bus" aria-hidden="true"></span>Buses</button>
-    </div>
+      <div class="ly-row ly-col">
+        <span class="ly-label">Map style</span>
+        <div class="seg seg3 basemap-switch" role="group" aria-label="Map style">
+          <button data-basemap="map" aria-pressed="true">Map</button>
+          <button data-basemap="dark" aria-pressed="false">Dark</button>
+          <button data-basemap="satellite" aria-pressed="false">Satellite</button>
+        </div>
+      </div>
+    </aside>
 
     <aside class="panel filters bus-panel" id="busPanel" aria-label="Buses">
       <div class="panel-head">
         <h2>Ding Ding</h2>
         <button class="close" id="busClose" aria-label="Close buses">×</button>
       </div>
-      <p class="bp-intro">London buses. Your saved routes show at any zoom; zoom in to see every bus around you. Each bus’s tag shows a little single or double decker.</p>
-      <label class="bp-switch"><input type="checkbox" id="busAll" /> Show every bus when zoomed in</label>
       <input id="busSearch" type="search" placeholder="Find a route, e.g. 93" autocomplete="off" inputmode="search" />
       <ul class="bp-list" id="busResults"></ul>
       <h3 class="bp-head">Your stops</h3>
@@ -89,10 +120,6 @@
         <button class="close" id="filtersClose" aria-label="Close filters">×</button>
       </div>
       <input id="search" type="search" placeholder="Find a headcode or station" autocomplete="off" />
-      <div class="seg" role="group" aria-label="Colour trains by">
-        <button data-colour="delay" aria-pressed="true">Colour by delay</button>
-        <button data-colour="op" aria-pressed="false">Colour by operator</button>
-      </div>
       <div class="bulk">
         <button id="allOn">Show all</button>
         <button id="allOff">Hide all</button>

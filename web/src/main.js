@@ -22,6 +22,18 @@ let busFavs = store0('busFavs', []); // TfL route ids, e.g. ['93', 'n93']
 let busesOn = store0('busesOn', false); // every bus when zoomed in (favourites always show)
 const BUS_ZOOM = 14;
 const isBus = (id) => typeof id === 'string' && id.startsWith('bus:');
+// Simple line icons used across the app (instead of emoji)
+const svg = (d, extra = '') => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"${extra}>${d}</svg>`;
+const ICON = {
+  warn: svg('<path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.1"/>'),
+  star: svg('<path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/>'),
+  starOn: svg('<path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z" fill="currentColor"/>'),
+  bell: svg('<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>'),
+  follow: svg('<path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="6.5"/>'),
+  bus: svg('<rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8 18v2M16 18v2"/>'),
+  check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>'),
+  swap: svg('<path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/>'),
+};
 const isStop = (id) => typeof id === 'string' && id.startsWith('stop:');
 function store0(k, d) {
   try {
@@ -416,7 +428,8 @@ let trainsShown = 0;
 function renderCount() {
   const t = `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}`;
   const nb = showBuses ? buses.size : 0;
-  countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} on the map` : `${t} on the map`;
+  const which = busesOn && map.getZoom() >= BUS_ZOOM ? 'in view' : 'yours';
+  countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} (${which})` : `${t} on the map`;
 }
 
 function updateCounts() {
@@ -460,7 +473,7 @@ function renderOps(perOp) {
   }
   const total = codes.length;
   const on = codes.filter((c) => !hidden.has(c)).length;
-  summaryEl.textContent = on === total ? '' : `${on} of ${total}`;
+  summaryEl.textContent = on === total ? 'All' : `${on} of ${total}`;
 }
 
 document.getElementById('allOn').onclick = () => {
@@ -497,10 +510,14 @@ function setFiltersOpen(open) {
   filtersEl.classList.toggle('open', open);
   toggleBtn.setAttribute('aria-expanded', open);
 }
-toggleBtn.onclick = () => setFiltersOpen(!filtersEl.classList.contains('open'));
+toggleBtn.onclick = () => {
+  const open = !filtersEl.classList.contains('open');
+  if (open) setLayersOpen(false);
+  setFiltersOpen(open);
+};
 document.getElementById('filtersClose').onclick = () => setFiltersOpen(false);
 // On wide screens the filter panel starts open
-if (window.matchMedia('(min-width: 900px)').matches) setFiltersOpen(true);
+// (The Operators list opens from the Layers sheet)
 
 // ---------- Train details ----------
 const detailEl = document.getElementById('detail');
@@ -1261,6 +1278,7 @@ window.addEventListener('orientationchange', () => setTimeout(setBottomGap, 300)
 window.addEventListener('resize', setBarHeight);
 function markTab(name) {
   tab = name;
+  setTimeout(updateZoomHint, 0);
   document.body.dataset.tab = name;
   for (const b of document.querySelectorAll('.tabbar [data-tab]')) b.setAttribute('aria-pressed', b.dataset.tab === name);
 }
@@ -1341,6 +1359,8 @@ function setTab(name, preset = null) {
 }
 for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
   b.addEventListener('click', () => {
+    // Opening the map: go to where you are
+    if (b.dataset.tab === 'map' && tab !== 'map') setTimeout(goToMe, 0);
     // Tapping Departures again while it's open keeps it; tapping Map closes everything
     setTab(b.dataset.tab);
   });
@@ -1348,26 +1368,58 @@ for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
 loadDisruptions();
 setInterval(loadDisruptions, 120000);
 
-// Trains and buses on/off
+// ---------- Map layers: trains on/off, buses Off · Mine · All ----------
+const busMode = () => (!showBuses ? 'off' : busesOn ? 'all' : 'mine');
+function showLayerState() {
+  document.getElementById('layerTrains').setAttribute('aria-checked', showTrains);
+  for (const b of document.querySelectorAll('[data-busmode]')) b.setAttribute('aria-pressed', b.dataset.busmode === busMode());
+  document.getElementById('busModeHint').textContent = {
+    off: 'No buses on the map.',
+    mine: 'Your saved routes and the buses you’ve been on, at any zoom.',
+    all: 'Every bus in view once you zoom in, plus your saved routes.',
+  }[busMode()];
+  updateZoomHint();
+}
 function applyLayers() {
-  for (const [id, on] of [['layerTrains', showTrains], ['layerBuses', showBuses]]) document.getElementById(id).setAttribute('aria-pressed', on);
   store.set('showTrains', showTrains);
   store.set('showBuses', showBuses);
+  store.set('busesOn', busesOn);
+  showLayerState();
   updateCounts();
   busShapes[showBuses ? 'addTo' : 'remove'](map);
 }
-// Show the switches as they were left (and hide route lines if buses are off)
-for (const [id, on] of [['layerTrains', showTrains], ['layerBuses', showBuses]]) document.getElementById(id).setAttribute('aria-pressed', on);
+// "All" only shows every bus once zoomed in: say so, rather than quietly showing nothing
+function updateZoomHint() {
+  document.getElementById('zoomHint').hidden = !(tab === 'map' && busMode() === 'all' && map.getZoom() < BUS_ZOOM && !document.body.classList.contains('replaying'));
+}
+document.getElementById('zoomHint').onclick = () => map.setZoom(BUS_ZOOM);
+map.on('zoomend', updateZoomHint);
+showLayerState();
 setTimeout(() => !showBuses && busShapes.remove(), 0); // after the bus layer is set up
 document.getElementById('layerTrains').onclick = () => {
   showTrains = !showTrains;
   applyLayers();
 };
-document.getElementById('layerBuses').onclick = () => {
-  showBuses = !showBuses;
-  applyLayers();
-  pollBuses();
-};
+for (const b of document.querySelectorAll('[data-busmode]')) {
+  b.onclick = () => {
+    showBuses = b.dataset.busmode !== 'off';
+    busesOn = b.dataset.busmode === 'all';
+    applyLayers();
+    pollBuses();
+  };
+}
+// The Layers sheet
+const layersEl = document.getElementById('layers');
+function setLayersOpen(open) {
+  layersEl.hidden = !open;
+  document.getElementById('layersBtn').setAttribute('aria-expanded', open);
+  if (open) {
+    setFiltersOpen(false);
+    closeDetail();
+  }
+}
+document.getElementById('layersBtn').onclick = () => setLayersOpen(layersEl.hidden);
+document.getElementById('layersClose').onclick = () => setLayersOpen(false);
 
 // A notification was tapped while the app was closed: show that train once it's on the map
 const wantTrain = params.get('train');
@@ -1411,7 +1463,8 @@ async function loadDisruptions() {
   }
   const n = disrupt.lines.length;
   disruptPill.hidden = !n;
-  disruptPill.textContent = `⚠ ${n} ${n === 1 ? 'line' : 'lines'} with disruption`;
+  disruptPill.innerHTML = `${ICON.warn}<span>${n}</span>`;
+  disruptPill.setAttribute('aria-label', `${n} ${n === 1 ? 'line' : 'lines'} with disruption`);
   renderDisruptions();
   updateCounts();
   home.render();
@@ -1798,7 +1851,6 @@ const busPanel = document.getElementById('busPanel');
 const busSearch = document.getElementById('busSearch');
 const busResults = document.getElementById('busResults');
 const busFavList = document.getElementById('busFavList');
-const busAll = document.getElementById('busAll');
 
 function setBusPanelOpen(open) {
   const panel = document.getElementById('busPanel');
@@ -1872,12 +1924,6 @@ function toggleBusFav(id) {
   pollBuses();
 }
 
-busAll.checked = busesOn;
-busAll.addEventListener('change', () => {
-  busesOn = busAll.checked;
-  store.set('busesOn', busesOn);
-  pollBuses();
-});
 
 function renderBusNote() {
   if (!busPanel.classList.contains('open')) return;
@@ -2254,9 +2300,10 @@ function startMe(centre) {
       (err) => {
         locateBtn.classList.remove('busy');
         if (err.code === 1) {
-          // Location turned off for this site
+          // Location turned off for this site: don't keep asking when the map opens
           stopMe();
           store.set('locOn', false);
+          store.set('locDenied', true);
         }
       },
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
@@ -2274,7 +2321,16 @@ function stopMe() {
   locateBtn.setAttribute('aria-pressed', 'false');
 }
 // Tap: show where you are and go there (tap again to come back to it)
-locateBtn.onclick = () => startMe(true);
+locateBtn.onclick = () => {
+  store.set('locDenied', false);
+  startMe(true);
+};
+/** When the map opens, centre it on where you are (unless you've said no to location). */
+function goToMe() {
+  if (DEMO || store.get('locDenied', false) || params.get('train')) return;
+  startMe(true);
+}
+if (tab === 'map') goToMe();
 // If you allowed it before, show your dot straight away (no prompt)
 if (store.get('locOn', false) && navigator.permissions) {
   navigator.permissions

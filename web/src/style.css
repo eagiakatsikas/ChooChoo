@@ -2204,3 +2204,270 @@ body.replaying .toggles {
   display: block;
   border-bottom: 1px solid #2c4539;
 }
+
+/* ===================== Clean-up: map controls ===================== */
+.ic {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+  flex: none;
+}
+/* Old floating controls are gone */
+.toggles,
+.replay-btn,
+.disrupt-pill {
+  display: none !important;
+}
+/* One stack of round buttons on the right */
+.map-fabs {
+  position: fixed;
+  z-index: 999;
+  right: 12px;
+  bottom: calc(var(--nav-h, 0px) + 18px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+body:not([data-tab='map']) .map-fabs,
+body:not([data-tab='map']) .zoom-hint {
+  display: none;
+}
+.fab {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--slate);
+  color: var(--ivory);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.fab svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.fab[aria-expanded='true'],
+#replayBtn.fab[aria-pressed='true'] {
+  background: var(--amber);
+  color: #162720;
+}
+#locateBtn.fab[aria-pressed='true'] {
+  color: #4a90e2;
+}
+#locateBtn.fab.busy svg {
+  animation: spin 1.2s linear infinite;
+}
+@media (min-width: 900px) {
+  /* Desktop keeps + / − ; the stack sits above them */
+  .map-fabs {
+    bottom: calc(110px + var(--safe-b));
+  }
+}
+@media (max-width: 899px) {
+  /* Phones pinch to zoom */
+  .leaflet-control-zoom.leaflet-control {
+    display: none;
+  }
+}
+.zoom-hint {
+  position: fixed;
+  z-index: 998;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(var(--bar-h, 70px) + 10px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  background: var(--slate);
+  color: var(--amber);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.zoom-hint[hidden] {
+  display: none;
+}
+/* Disruption: a small badge in the header */
+.dz-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #6b5420;
+  background: #3a2f14;
+  color: #f1d48a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dz-badge[hidden] {
+  display: none;
+}
+.dz-badge .ic {
+  width: 14px;
+  height: 14px;
+}
+/* The Layers sheet */
+.panel.layers {
+  padding: 14px 16px 16px;
+}
+.panel.layers:not([hidden]) {
+  display: block;
+}
+@media (min-width: 900px) {
+  .panel.layers {
+    right: 72px;
+    bottom: calc(110px + var(--safe-b));
+    width: 300px;
+  }
+}
+@media (max-width: 899px) {
+  .panel.layers {
+    left: 0;
+    right: 0;
+    bottom: var(--nav-h);
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+  }
+}
+.ly-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid #2c4539;
+}
+.ly-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.ly-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.ly-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ly-link {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid #2c4539;
+  background: none;
+  color: var(--ivory);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ly-link::after {
+  content: '›';
+  margin-left: 8px;
+  color: var(--muted);
+}
+.ly-sum {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 500;
+}
+.seg.seg3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.layers .seg button {
+  padding: 9px 6px;
+  font-size: 14px;
+}
+.layers .seg button[aria-pressed='true'] {
+  background: var(--amber);
+  color: #162720;
+}
+/* An on/off switch */
+.switch {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  border: 0;
+  background: #3a4a41;
+  cursor: pointer;
+  flex: none;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #efeadb;
+  transition: transform 0.15s;
+}
+.switch[aria-checked='true'] {
+  background: var(--amber);
+}
+.switch[aria-checked='true']::after {
+  transform: translateX(20px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch::after {
+    transition: none;
+  }
+}
+/* Operators list now opens from Layers: same place as the Layers sheet */
+@media (min-width: 900px) {
+  .filters {
+    left: auto;
+    right: 72px;
+    top: calc(84px + var(--safe-t));
+    bottom: calc(110px + var(--safe-b));
+  }
+}
+.hdr-search[hidden] {
+  display: none;
+}
+.layers .basemap-switch {
+  position: static;
+  display: grid;
+  flex-direction: row;
+  background: none;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.layers .basemap-switch button {
+  border: 0;
+}
+.panel.layers {
+  max-height: calc(100dvh - var(--bar-h, 80px) - var(--nav-h, 0px) - 20px);
+  overflow-y: auto;
+}
+.layers .basemap-switch button + button {
+  border-top: 0;
+}
+.layers .basemap-switch button[aria-pressed='true'] {
+  background: var(--amber);
+  color: #162720;
+}
