@@ -2986,3 +2986,20 @@ body:not([data-tab='map']) .zoom-hint {
     top: calc(var(--safe-t) + 14px) !important;
   }
 }
+
+/* Phones: a tighter nav bar. Labels sit just above the home indicator, like iOS's own tab bars */
+@media (max-width: 899px) {
+  :root {
+    --nav-pad: max(4px, calc(var(--safe-b) - 22px));
+    --nav-h: calc(50px + var(--nav-pad));
+  }
+  .tabbar {
+    height: calc(50px + var(--nav-pad)) !important;
+    padding-top: 4px;
+    padding-bottom: var(--nav-pad) !important;
+  }
+  .tabbar button {
+    justify-content: flex-start;
+    padding-top: 2px;
+  }
+}
