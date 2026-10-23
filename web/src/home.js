@@ -36,14 +36,21 @@ export function createHome(ctx) {
     );
   }
 
+  /** Your two commute stations: as set up, or else your first saved route. */
+  function pair() {
+    const c = ctx.commute && ctx.commute();
+    if (c) return { a: c.home, b: c.work, set: true };
+    const f = ctx.favs()[0];
+    const a = f && ctx.byCrs(f.f);
+    const b = f && ctx.byCrs(f.t);
+    return a && b ? { a, b, set: false } : null;
+  }
+
   /** Which way round to show the commute, and why. */
   function commute() {
-    const favs = ctx.favs();
-    if (!favs.length) return null;
-    const f = favs[0];
-    const a = ctx.byCrs(f.f);
-    const b = ctx.byCrs(f.t);
-    if (!a || !b) return null;
+    const pr = pair();
+    if (!pr) return null;
+    const { a, b } = pr;
     let rev = false;
     let why;
     if (here && Date.now() - here.at < 15 * 60000) {
@@ -51,7 +58,7 @@ export function createHome(ctx) {
       why = 'of where you are';
     } else {
       const h = new Date().getHours();
-      rev = h >= 12; // mornings as saved, afternoons and evenings the other way
+      rev = h >= 12; // mornings from home, afternoons and evenings from work
       why = h >= 12 ? 'it’s the afternoon' : 'it’s the morning';
     }
     if (flipped && flipped.until > Date.now()) {
@@ -94,6 +101,24 @@ export function createHome(ctx) {
     }
     return walk <= 60 ? { mins: walk, how: 'walk', text: `${walk} min walk` } : null;
   }
+
+  // Sections below the main card fold away; remember which ones you've opened
+  const openFolds = new Set(ctx.store.get('homeFolds', []));
+  function fold(id, title, inner, hint = '') {
+    if (!inner) return '';
+    return `<details class="fold" data-fold="${id}" ${openFolds.has(id) ? 'open' : ''}><summary><span>${title}</span>${hint ? `<small>${hint}</small>` : ''}</summary><div class="fold-body">${inner}</div></details>`;
+  }
+  body.addEventListener(
+    'toggle',
+    (e) => {
+      const d = e.target;
+      if (!d.dataset || !d.dataset.fold) return;
+      if (d.open) openFolds.add(d.dataset.fold);
+      else openFolds.delete(d.dataset.fold);
+      ctx.store.set('homeFolds', [...openFolds]);
+    },
+    true,
+  );
 
   /** Getting to the station: TfL's best few routes, door to station. */
   function thereSection(st, tr) {
@@ -233,12 +258,12 @@ export function createHome(ctx) {
     const h = new Date().getHours();
     document.getElementById('homeTitle').textContent = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
     const favs = ctx.favs();
-    if (!favs.length) {
+    if (!pair()) {
       body.innerHTML = `<div class="h-empty">
-        <p><b>Save a route to see it here.</b></p>
-        <p>Open Departures, choose where you’re going from and to (say Raynes Park to Waterloo), and tap ☆ Save route. Your first saved route becomes your commute: it shows here the right way round for the time of day, with the next good train and when to leave.</p>
-        <button class="h-btn" type="button" data-go="departures">Open Departures</button>
-      </div>` + extras.map((f) => f()).join('');
+        <p><b>Set up your commute to see it here.</b></p>
+        <p>Choose your home and work stations, and Choo Choo shows the next good train the right way round, with its platform and when to leave.</p>
+        <button class="h-btn" type="button" data-go="setup">Set up your commute</button>
+      </div>` + extrasHtml();
       return;
     }
     const c = commute();
@@ -270,7 +295,7 @@ export function createHome(ctx) {
         }
         const shown = d.rows.filter((r) => !r.cancelled || r === best);
         const from = Math.max(0, shown.indexOf(best) - 1); // one you've missed for context, then the rest
-        const rows = shown.slice(from, from + 4).map((r) => ({ ...r, best: r === best, _missed: missed(r) }));
+        const rows = shown.slice(from, from + 3).map((r) => ({ ...r, best: r === best, _missed: missed(r) }));
         const top = trainRow(best, walk);
         html += `<div class="h-next">
           <div class="h-big"><span class="h-time">${esc(best.etdTime || best.std)}</span>
@@ -283,15 +308,20 @@ export function createHome(ctx) {
         <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail.' : 'Timetabled platforms until the station announces them.'} Tap a train to see it on the map.</p>`;
       }
       html += `<div class="h-more"><button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full departures board</button><button class="h-link" type="button" data-board="${c.from.c}|">All trains from ${esc(ctx.short(c.from.n))}</button></div>`;
-      html += thereSection(c.from, tr) || (tr && tr.options ? '' : busSection(c.from, walk));
-      if (ctx.disruptionNote && d) html += ctx.disruptionNote(d.rows.map((r) => r.op));
-      html += reliability(c);
       html += '</section>';
+      // Everything else folds away under the main card
+      const dz = ctx.disruptionNote && d ? ctx.disruptionNote(d.rows.map((r) => r.op)) : '';
+      if (dz) html += fold('dz', 'Disruption on your trains', dz, '');
+      html += fold('there', `Getting to ${esc(ctx.short(c.from.n))}`, thereSection(c.from, tr) || (tr && tr.options ? '' : busSection(c.from, walk)), tr ? esc(tr.text) : '');
+      const h7 = hist.get(`${c.from.c}|${c.to.c}`);
+      const pct = h7 && h7.week && h7.week.trains >= 3 ? `${Math.round((h7.week.onTime / h7.week.trains) * 100)}% on time` : '';
+      html += fold('rel', 'How reliable it’s been', reliability(c), pct);
     }
-    // Other saved routes, one line each
-    const others = favs.slice(1);
+    // Other saved routes, one line each (not the commute itself)
+    const pr = pair();
+    const others = favs.filter((f) => !pr || !((f.f === pr.a.c && f.t === pr.b.c) || (f.f === pr.b.c && f.t === pr.a.c)));
     if (others.length) {
-      html += '<section class="h-card"><h3 class="h-head">Your other routes</h3><ul class="h-routes">';
+      let inner = '<ul class="h-routes">';
       for (const f of others) {
         const a = ctx.byCrs(f.f);
         const b = ctx.byCrs(f.t);
@@ -299,12 +329,25 @@ export function createHome(ctx) {
         const d = boards.get(`${f.f}|${f.t}`);
         const r = d && (d.rows.find((x) => x.best) || d.rows[0]);
         const [exp, cls] = r ? ctx.expText(r) : ['', ''];
-        html += `<li><button type="button" data-board="${f.f}|${f.t}"><span class="h-r">${esc(ctx.short(a.n))} → ${esc(ctx.short(b.n))}</span>
+        inner += `<li><button type="button" data-board="${f.f}|${f.t}"><span class="h-r">${esc(ctx.short(a.n))} → ${esc(ctx.short(b.n))}</span>
           <span class="h-n">${r ? `${esc(r.std)} <span class="b-exp ${cls}">${exp}</span>${r.plat ? ` · plat ${esc(r.plat)}` : ''}` : d ? 'No direct trains soon' : '…'}</span></button></li>`;
       }
-      html += '</ul></section>';
+      inner += '</ul>';
+      html += fold('others', 'Your other routes', inner, `${others.length}`);
     }
-    body.innerHTML = html + extras.map((f) => f()).join('');
+    body.innerHTML = html + extrasHtml();
+  }
+
+  /** Sections added by the rest of the app (bus stops, alerts), folded like the rest. */
+  function extrasHtml() {
+    return extras
+      .map((f, i) => {
+        const r = f();
+        if (!r) return '';
+        if (typeof r === 'string') return r;
+        return fold(r.id || `x${i}`, r.title, r.html, r.hint || '');
+      })
+      .join('');
   }
 
   async function refresh() {
@@ -317,7 +360,7 @@ export function createHome(ctx) {
       jobs.push(fetchThere(c.from).then(() => (there.options.length ? null : fetchBusTo(c.from))));
     }
     if (c) jobs.push(fetchHistory(c));
-    for (const f of ctx.favs().slice(1, 6)) jobs.push(fetchBoard(f.f, f.t));
+    for (const f of ctx.favs().slice(0, 6)) jobs.push(fetchBoard(f.f, f.t));
     render();
     await Promise.all(jobs);
     render();
@@ -328,13 +371,14 @@ export function createHome(ctx) {
     if (!b) return;
     if (b.classList.contains('h-swap')) {
       const c = commute();
-      const favs = ctx.favs();
-      const rev = c && favs[0] && c.from.c !== favs[0].f;
+      const pr = pair();
+      const rev = c && pr && c.from.c !== pr.a.c;
       flipped = { rev: !rev, until: Date.now() + 4 * 3600000 };
       ctx.store.set('commuteFlip', flipped);
       refresh();
       return;
     }
+    if (b.dataset.go === 'setup') return ctx.openSetup && ctx.openSetup();
     if (b.dataset.go) return ctx.setTab(b.dataset.go);
     if (b.dataset.alert) {
       const a = ctx.alerts();

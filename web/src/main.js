@@ -1325,6 +1325,8 @@ function setAlertsOpen(open) {
 
 const home = createHome({
   alerts: () => alerts,
+  commute: () => commuteStations(),
+  openSetup: () => openSetup(),
   disruptionNote: (ops) => disruptionNote(ops),
   WORKER,
   store,
@@ -1342,9 +1344,12 @@ const home = createHome({
 home.addSection(() => {
   const list = alerts.list();
   if (!list.length) return '';
-  return `<section class="h-card"><h3 class="h-head">Your alerts</h3><ul class="al-list">${list
-    .map((x) => `<li><button class="al-go" type="button" data-id="${esc(x.key)}">${esc(x.label)}</button></li>`)
-    .join('')}</ul></section>`;
+  return {
+    id: 'alerts',
+    title: 'Your alerts',
+    hint: `${list.length}`,
+    html: `<ul class="al-list">${list.map((x) => `<li><button class="al-go" type="button" data-id="${esc(x.key)}">${esc(x.label)}</button></li>`).join('')}</ul>`,
+  };
 });
 document.getElementById('alertCount').textContent = alerts.list().length || '';
 function setHomeOpen(open) {
@@ -2257,7 +2262,7 @@ document.getElementById('stopsNearBtn').onclick = () => {
 
 home.addSection(() => {
   if (!stopFavs.length) return '';
-  return `<section class="h-card"><h3 class="h-head">Your bus stops</h3>${favStopsHtml(2)}</section>`;
+  return { id: 'stops', title: 'Your bus stops', html: favStopsHtml(2) };
 });
 document.getElementById('homeBody').addEventListener('click', (e) => {
   const b = e.target.closest('[data-stop]');
@@ -2627,5 +2632,115 @@ const finderDrag = draggable(finderEl, {
   snaps: () => [Math.round(window.innerHeight * 0.45), fullH],
   onClose: () => setTab('map'),
 });
+
+// ---------- Your commute: home and work stations ----------
+function commuteStations() {
+  const c = store.get('commute', null);
+  if (!c || !stations) return null;
+  const home = byCrs(c.home), work = byCrs(c.work);
+  return home && work ? { home, work } : null;
+}
+
+// ---------- First-run setup: stations, location, home screen ----------
+const setupEl = document.getElementById('setup');
+const setupBody = document.getElementById('setupBody');
+const setupStep = document.getElementById('setupStep');
+let setupPick = { home: null, work: null };
+
+function stationPicker(which, label, placeholder) {
+  const s0 = setupPick[which] && byCrs(setupPick[which]);
+  return `<label class="sp-label" for="sp-${which}">${label}</label>
+    <input class="sp-input" id="sp-${which}" type="text" autocomplete="off" spellcheck="false" placeholder="${placeholder}" value="${s0 ? esc(s0.n) : ''}" data-which="${which}" />
+    <ul class="sp-list" id="sp-${which}-list"></ul>`;
+}
+
+function setupStep1() {
+  setupStep.textContent = 'Step 1 of 3';
+  setupBody.innerHTML = `<h2>Your commute</h2>
+    <p>Choose your two stations. Home then shows your next train the right way round: from home in the morning (or wherever you are), from work later on.</p>
+    ${stationPicker('home', 'Home station', 'e.g. Raynes Park')}
+    ${stationPicker('work', 'Work station', 'e.g. London Waterloo')}
+    <div class="setup-btns"><button class="h-link" type="button" data-s="skip1">Skip for now</button><button class="setup-next" type="button" data-s="next1" ${setupPick.home && setupPick.work ? '' : 'disabled'}>Next</button></div>`;
+}
+function setupStep2() {
+  setupStep.textContent = 'Step 2 of 3';
+  setupBody.innerHTML = `<h2>Where you are</h2>
+    <p>With your location, Choo Choo opens the map on you, works out which way you’re going, how long it takes you to get to the station and when to leave. It stays on your phone.</p>
+    <div class="setup-btns"><button class="h-link" type="button" data-s="skip2">Not now</button><button class="setup-next" type="button" data-s="loc">Use my location</button></div>`;
+}
+function setupStep3() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (!ios || installed) return finishSetup();
+  setupStep.textContent = 'Step 3 of 3';
+  setupBody.innerHTML = `<h2>Add it to your home screen</h2>
+    <p>On iPhone, alerts about your train only work when Choo Choo is on your home screen, and it opens full screen like an app.</p>
+    <ol class="setup-how"><li>Tap <b>Share</b> at the bottom of Safari</li><li>Choose <b>Add to Home Screen</b></li><li>Open Choo Choo from your home screen</li></ol>
+    <div class="setup-btns"><span></span><button class="setup-next" type="button" data-s="done">Done</button></div>`;
+}
+function finishSetup() {
+  store.set('setupDone', true);
+  setupEl.hidden = true;
+  if (setupPick.home && setupPick.work) setTab('home');
+}
+function openSetup() {
+  const c = store.get('commute', null);
+  const f = favs[0];
+  setupPick = { home: c?.home || f?.f || null, work: c?.work || f?.t || null };
+  setupEl.hidden = false;
+  loadStations().then(setupStep1, setupStep1);
+}
+setupBody.addEventListener('input', (e) => {
+  const inp = e.target.closest('.sp-input');
+  if (!inp) return;
+  const list = document.getElementById(`${inp.id}-list`);
+  setupPick[inp.dataset.which] = null;
+  setupBody.querySelector('[data-s=next1]')?.setAttribute('disabled', '');
+  list.innerHTML = search(inp.value)
+    .slice(0, 6)
+    .map((st) => `<li><button type="button" data-pick="${inp.dataset.which}" data-crs="${st.c}">${esc(st.n)} <small>${st.c}</small></button></li>`)
+    .join('');
+});
+setupBody.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.pick) {
+    setupPick[b.dataset.pick] = b.dataset.crs;
+    document.getElementById(`sp-${b.dataset.pick}`).value = byCrs(b.dataset.crs)?.n || '';
+    document.getElementById(`sp-${b.dataset.pick}-list`).innerHTML = '';
+    if (setupPick.home && setupPick.work) setupBody.querySelector('[data-s=next1]')?.removeAttribute('disabled');
+    return;
+  }
+  const s = b.dataset.s;
+  if (s === 'next1') {
+    store.set('commute', { home: setupPick.home, work: setupPick.work });
+    // Keep it as a saved route too, so its board and reliability are one tap away
+    if (!favs.some((x) => x.f === setupPick.home && x.t === setupPick.work)) {
+      favs = [{ f: setupPick.home, t: setupPick.work }, ...favs].slice(0, 8);
+      store.set('favs', favs);
+    }
+    home.render();
+    return setupStep2();
+  }
+  if (s === 'skip1') return setupStep2();
+  if (s === 'skip2') return setupStep3();
+  if (s === 'loc') {
+    if (!navigator.geolocation) return setupStep3();
+    b.textContent = 'Waiting for your phone…';
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        store.set('locDenied', false);
+        startMe(false);
+        setupStep3();
+      },
+      () => setupStep3(),
+      { timeout: 15000 },
+    );
+    return;
+  }
+  if (s === 'done') return finishSetup();
+});
+// First time: set things up
+if (!store.get('setupDone', false) && !DEMO && !params.get('train')) openSetup();
 
 window.chooStarted = true;
