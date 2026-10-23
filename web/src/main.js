@@ -436,6 +436,7 @@ function setStatus(state, text) {
   if (replaying && text !== 'Replay') return; // keep showing "Replay" until you go back to live
   statusEl.dataset.state = state;
   statusText.textContent = text;
+  statusEl.title = text;
 }
 
 let trainsShown = 0;
@@ -444,6 +445,8 @@ function renderCount() {
   const nb = showBuses ? buses.size : 0;
   const which = busesOn && map.getZoom() >= BUS_ZOOM ? 'in view' : 'yours';
   countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} (${which})` : `${t} on the map`;
+  const ly = document.getElementById('lyCount');
+  if (ly) ly.textContent = countEl.textContent;
 }
 
 function updateCounts() {
@@ -1301,6 +1304,7 @@ function setBottomGap() {
     document.body.appendChild(probe);
     const safeB = Math.round(probe.getBoundingClientRect().height);
     probe.remove();
+    countEl.hidden = false;
     countEl.textContent = `screen ${window.screen.height} · inner ${window.innerHeight} · vv ${Math.round(window.visualViewport?.height || 0)} · app ${standaloneApp} · safe ${safeB}`;
   }
 }

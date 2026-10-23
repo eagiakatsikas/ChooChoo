@@ -2892,3 +2892,90 @@ body:not([data-tab='map']) .zoom-hint {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* ===================== Slim top bar: search, live dot, disruption ===================== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.bar {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--rule) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+.bar .count {
+  display: none;
+}
+.bar .count:not([hidden]) {
+  display: block;
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  font-size: 10px;
+}
+.hdr-search {
+  flex: 1;
+  min-width: 0;
+  width: auto !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border-radius: 999px !important;
+  position: static !important;
+  font: inherit;
+  font-size: 15px;
+  color: var(--muted) !important;
+  text-align: left;
+}
+.hdr-search span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hdr-search svg {
+  flex: none;
+  color: var(--ivory);
+}
+/* Live: just the dot. Otherwise the dot and a word (Reconnecting, Replay…) */
+.bar .status {
+  flex: none;
+  margin: 0;
+  padding: 0 6px 0 2px;
+  font-size: 12px;
+}
+.bar .status[data-state='live'] #statusText {
+  display: none;
+}
+.ly-count {
+  margin: 2px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (min-width: 900px) {
+  .bar {
+    top: calc(12px + var(--safe-t)) !important;
+    left: 12px !important;
+    width: 440px;
+    max-width: calc(100vw - 24px) !important;
+  }
+}
+@media (max-width: 899px) {
+  .bar {
+    top: calc(var(--safe-t) + 8px) !important;
+    left: 10px !important;
+    right: 10px !important;
+    padding: 5px 6px !important;
+    border-width: 1px !important;
+  }
+}
