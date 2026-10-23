@@ -92,13 +92,15 @@ For live platforms and expected times, add a free National Rail key: register at
 
 ## Getting around the app
 
-The bar at the bottom has five tabs:
+On first open, Choo Choo asks for your home and work stations, your location, and (on iPhone) to be added to the home screen. The bar at the bottom has five tabs:
 
-- **Home:** your commute at a glance. Your first saved route, the right way round (from where you are, or by time of day; ⇄ swaps it), the next good train with its platform, when to leave to walk there (or which bus to take if it's a long walk), any disruption on the operators running it, and how reliable the route has been this week.
-- **Map:** the live map. Trains and Buses switches, Operators filter, tap a station for its departures, tap a train for its stops (Follow keeps it on screen), ⚠ disruption list, and the clock button to replay the last hour.
-- **Departures:** any station's departures board, optionally just the trains to one destination. Save routes here.
-- **Alerts:** trains you've asked to be told about. Tap 🔔 Alert me on Home or on a train: you get a notification when its platform is announced or changes, if it's late, and if it's cancelled. On iPhone, notifications only work once Choo Choo is added to the home screen (Share → Add to Home Screen).
-- **Ding Ding:** buses.
+- **Home:** your commute at a glance: the next good train the right way round (from where you are, or by time of day; the arrows swap it), its platform and when to leave. Getting to the station, reliability, disruption, other routes, bus stops and alerts fold away underneath.
+- **Map:** opens on where you are. The round buttons on the right are **Layers** (trains on/off, buses Off · Mine · All, colours, operators, map style), **My location** and **Replay**. Tap a station, train, bus or bus stop for its details; drag the panel up for more or flick it down to close. Disruption shows as a ⚠ badge in the header.
+- **Departures:** any station's departures board, optionally just the trains to one destination.
+- **Saved:** your commute, saved train routes, bus routes and bus stops, alerts, and **Watch my commute train** (weekday mornings and evenings, the worker picks your next good train and alerts you about it). On iPhone, notifications only work once Choo Choo is on the home screen.
+- **Ding Ding:** buses, in three parts: Routes, Stops and My buses.
+
+The search button in the header finds stations, bus stops, bus routes, train headcodes and bus registrations. The app reopens on the tab and map position you left.
 
 Your saved routes and alerts are kept on your phone. The server records how your saved routes' trains arrive (30 days) for the reliability figures, and keeps the last hour of train positions for replay.
 
