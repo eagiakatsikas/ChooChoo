@@ -3042,3 +3042,47 @@ body:not([data-tab='map']) .zoom-hint {
 .bar .bar-info .count:empty::before {
   content: none;
 }
+
+/* Quick on/off for trains and buses: the counts in the top bar */
+.qt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ivory);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qt .lk {
+  width: 9px;
+  height: 9px;
+}
+.qt .lk.bus {
+  height: 7px;
+}
+.qt[aria-pressed='false'] {
+  color: var(--muted);
+  border-style: dashed;
+}
+.qt[aria-pressed='false'] .lk {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.bar-info {
+  gap: 6px !important;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.bar-info .status {
+  margin-right: 2px;
+}
+.bar .bar-info .count[hidden] {
+  display: none !important;
+}

@@ -447,6 +447,15 @@ function renderCount() {
   countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} (${which})` : `${t} on the map`;
   const ly = document.getElementById('lyCount');
   if (ly) ly.textContent = countEl.textContent;
+  // Quick switches in the top bar: the counts double as on/off buttons
+  const qt = document.getElementById('qtTrains');
+  const qb = document.getElementById('qtBuses');
+  if (qt && qb) {
+    qt.setAttribute('aria-pressed', showTrains);
+    qt.querySelector('.qt-t').textContent = showTrains ? `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}` : 'Trains off';
+    qb.setAttribute('aria-pressed', showBuses);
+    qb.querySelector('.qt-t').textContent = showBuses ? `${nb} ${nb === 1 ? 'bus' : 'buses'}${nb ? ` (${which})` : ''}` : 'Buses off';
+  }
 }
 
 function updateCounts() {
@@ -1442,6 +1451,22 @@ document.getElementById('zoomHint').onclick = () => map.setZoom(BUS_ZOOM);
 map.on('zoomend', updateZoomHint);
 showLayerState();
 setTimeout(() => !showBuses && busShapes.remove(), 0); // after the bus layer is set up
+document.getElementById('qtTrains').onclick = () => {
+  showTrains = !showTrains;
+  applyLayers();
+};
+document.getElementById('qtBuses').onclick = () => {
+  // Off, or back to whichever of Mine / All you had
+  if (showBuses) {
+    store.set('lastBusMode', busesOn ? 'all' : 'mine');
+    showBuses = false;
+  } else {
+    showBuses = true;
+    busesOn = store.get('lastBusMode', 'mine') === 'all';
+  }
+  applyLayers();
+  pollBuses();
+};
 document.getElementById('layerTrains').onclick = () => {
   showTrains = !showTrains;
   applyLayers();
