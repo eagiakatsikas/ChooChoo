@@ -2979,3 +2979,10 @@ body:not([data-tab='map']) .zoom-hint {
     border-width: 1px !important;
   }
 }
+
+/* Phones: keep the search bar clear of the soft blur iOS adds under the clock */
+@media (max-width: 899px) {
+  .bar {
+    top: calc(var(--safe-t) + 14px) !important;
+  }
+}

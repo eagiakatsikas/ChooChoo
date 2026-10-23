@@ -4,8 +4,8 @@
   "description": "Live map of trains in and out of London",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1f3229",
-  "theme_color": "#1f3229",
+  "background_color": "#162720",
+  "theme_color": "#162720",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
