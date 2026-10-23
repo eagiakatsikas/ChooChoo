@@ -1304,7 +1304,6 @@ function setBottomGap() {
     document.body.appendChild(probe);
     const safeB = Math.round(probe.getBoundingClientRect().height);
     probe.remove();
-    countEl.hidden = false;
     countEl.textContent = `screen ${window.screen.height} · inner ${window.innerHeight} · vv ${Math.round(window.visualViewport?.height || 0)} · app ${standaloneApp} · safe ${safeB}`;
   }
 }

@@ -31,10 +31,12 @@
         <span>Search</span>
       </button>
       <button class="dz-badge" id="disruptPill" type="button" hidden aria-label="Disruption"></button>
-      <p class="status" id="status" data-state="connecting" title="Connecting">
-        <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
-      </p>
-      <p class="count" id="count" hidden></p>
+      <div class="bar-info">
+        <p class="status" id="status" data-state="connecting" title="Connecting">
+          <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
+        </p>
+        <p class="count" id="count"></p>
+      </div>
     </header>
 
     <p class="offline" id="offline" hidden>Can’t reach Choo Choo’s server just now. It may be restarting; retrying…</p>

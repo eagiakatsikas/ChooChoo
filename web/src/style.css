@@ -3003,3 +3003,42 @@ body:not([data-tab='map']) .zoom-hint {
     padding-top: 2px;
   }
 }
+
+/* Status and counts back: a small second line inside the top bar */
+.bar {
+  flex-wrap: wrap !important;
+  row-gap: 2px !important;
+  border-radius: 22px !important;
+}
+.bar-info {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 2px;
+  min-width: 0;
+}
+.bar-info .status {
+  padding: 0;
+  font-size: 12px;
+}
+.bar .bar-info .status[data-state='live'] #statusText {
+  display: inline;
+}
+.bar .bar-info .count {
+  display: block !important;
+  position: static !important;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar .bar-info .count::before {
+  content: '·';
+  margin-right: 8px;
+}
+.bar .bar-info .count:empty::before {
+  content: none;
+}
