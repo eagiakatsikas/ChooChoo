@@ -73,9 +73,10 @@ const boardCrs = new Map(); // train id → the station you'd board at (when ope
 let disrupt = { lines: [] }; // line status from the worker
 
 // ---------- Map ----------
+const lastView = store0('mapView', null); // where you left the map
 const map = L.map('map', {
-  center: [51.505, -0.12],
-  zoom: 11,
+  center: lastView ? lastView.c : [51.505, -0.12],
+  zoom: lastView ? lastView.z : 11,
   minZoom: 8,
   maxZoom: 17,
   zoomControl: false,
@@ -643,7 +644,10 @@ async function loadCalls() {
   routeLine = L.polyline(d.path, { color: '#d4a64a', weight: 3, opacity: 0.85, dashArray: '2 7', interactive: false }).addTo(map);
 }
 
+let detailFrom = null; // the tab you were on when you opened a panel from a list
 function select(id) {
+  if (!selectedId) window.__detailDrag?.reset();
+  if (!selectedId && tab !== 'map') detailFrom = tab;
   if (following && following !== id) setFollow(null);
   selectedId = id;
   detailEl.hidden = false;
@@ -664,15 +668,19 @@ function select(id) {
   }, 15000);
 }
 
-function closeDetail() {
+/** Close the train/bus/stop panel. byYou: you closed it, so go back to where you came from. */
+function closeDetail(byYou = false) {
+  const back = byYou === true && detailFrom && window.matchMedia('(max-width: 899px)').matches ? detailFrom : null;
+  detailFrom = null;
   selectedId = null;
   setFollow(null);
   detailEl.hidden = true;
   clearInterval(detailTimer);
   if (routeLine) routeLine.remove();
   routeLine = null;
+  if (back && back !== 'map') setTab(back);
 }
-document.getElementById('detailClose').onclick = closeDetail;
+document.getElementById('detailClose').onclick = () => closeDetail(true);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeDetail();
@@ -1124,7 +1132,9 @@ function showTrain(id, crs = null) {
   const v = trains.get(id);
   if (crs) boardCrs.set(id, crs);
   if (!v) return false;
+  const from = tab;
   setTab('map');
+  if (from !== 'map') detailFrom = from;
   select(id);
   const p = position(v, now());
   if (p) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14));
@@ -1278,6 +1288,7 @@ window.addEventListener('orientationchange', () => setTimeout(setBottomGap, 300)
 window.addEventListener('resize', setBarHeight);
 function markTab(name) {
   tab = name;
+  store.set('lastTab', name);
   setTimeout(updateZoomHint, 0);
   document.body.dataset.tab = name;
   for (const b of document.querySelectorAll('.tabbar [data-tab]')) b.setAttribute('aria-pressed', b.dataset.tab === name);
@@ -1434,8 +1445,12 @@ if (wantTrain) {
 }
 
 // Open on Home when there's a commute to show, otherwise the map
+// Start where you left off (Home if you've a commute and no last tab yet)
+const startTab = store.get('lastTab', null);
 if (wantTrain) markTab('map');
-else if (favs.length && !params.has('demo')) setTab('home');
+else if (params.has('demo')) markTab('map');
+else if (startTab && startTab !== 'map') setTab(startTab);
+else if (!startTab && favs.length) setTab('home');
 else markTab('map');
 
 // ---------- Disruption ----------
@@ -2160,8 +2175,10 @@ dCalls.addEventListener('click', (e) => {
 });
 
 function openStop(id, la, lo) {
+  const from = tab;
   setTab('map');
   select('stop:' + id);
+  if (from !== 'map') detailFrom = from;
   if (la && lo) map.setView([la, lo], Math.max(map.getZoom(), 16));
 }
 
@@ -2537,5 +2554,78 @@ qResults.addEventListener('click', (e) => {
   if (b.dataset.stop) return openStop(b.dataset.stop, Number(b.dataset.la), Number(b.dataset.lo));
 });
 document.addEventListener('keydown', (e) => e.key === 'Escape' && !searchPanel.hidden && setSearchOpen(false));
+
+// Remember where the map was left
+map.on('moveend', () => {
+  const c = map.getCenter();
+  store.set('mapView', { c: [Math.round(c.lat * 1e5) / 1e5, Math.round(c.lng * 1e5) / 1e5], z: map.getZoom() });
+});
+
+// ---------- Sheets you can drag (phones): pull up for more, flick down to close ----------
+function draggable(panel, { onClose, snaps }) {
+  const grab = document.createElement('div');
+  grab.className = 'grab';
+  grab.setAttribute('aria-hidden', 'true');
+  panel.prepend(grab);
+  const phone = () => window.matchMedia('(max-width: 899px)').matches;
+  let startY = 0, startH = 0, dragging = false, moved = false, lastY = 0, lastT = 0, speed = 0;
+  const heights = () => snaps().map((f) => (typeof f === 'number' ? f : f()));
+  const start = (e) => {
+    if (!phone()) return;
+    // Only from the handle or the panel's heading, so lists still scroll normally
+    if (!e.target.closest('.grab, .panel-head, .d-route, .d-op')) return;
+    if (e.target.closest('button, input, a')) return;
+    dragging = true;
+    moved = false;
+    startY = lastY = e.clientY;
+    lastT = performance.now();
+    startH = panel.getBoundingClientRect().height;
+    panel.classList.add('dragging');
+    panel.setPointerCapture?.(e.pointerId);
+  };
+  const move = (e) => {
+    if (!dragging) return;
+    const dy = e.clientY - startY;
+    if (Math.abs(dy) > 4) moved = true;
+    const now = performance.now();
+    speed = (e.clientY - lastY) / Math.max(1, now - lastT);
+    lastY = e.clientY;
+    lastT = now;
+    const hs = heights();
+    panel.style.height = `${Math.max(80, Math.min(hs[hs.length - 1], startH - dy))}px`;
+    panel.style.maxHeight = 'none';
+  };
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    panel.classList.remove('dragging');
+    if (!moved) return;
+    const h = panel.getBoundingClientRect().height;
+    const hs = heights();
+    // A quick flick down, or below the smallest size: close
+    if (speed > 0.8 || h < hs[0] - 50) {
+      panel.style.height = '';
+      return onClose();
+    }
+    // Otherwise settle at the nearest size (a flick up goes up a size)
+    let best = hs.reduce((a, b) => (Math.abs(b - h) < Math.abs(a - h) ? b : a));
+    if (speed < -0.8) best = hs.find((x) => x > h + 10) || hs[hs.length - 1];
+    panel.style.height = `${best}px`;
+  };
+  panel.addEventListener('pointerdown', start);
+  window.addEventListener('pointermove', move, { passive: true });
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+  return { reset: () => ((panel.style.height = ''), (panel.style.maxHeight = '')) };
+}
+const fullH = () => window.innerHeight - (barEl.getBoundingClientRect().bottom || 80) - (document.querySelector('.tabbar').getBoundingClientRect().height || 60);
+const detailDrag = (window.__detailDrag = draggable(detailEl, {
+  snaps: () => [Math.min(200, fullH()), Math.round(window.innerHeight * 0.5), fullH],
+  onClose: () => closeDetail(true),
+}));
+const finderDrag = draggable(finderEl, {
+  snaps: () => [Math.round(window.innerHeight * 0.45), fullH],
+  onClose: () => setTab('map'),
+});
 
 window.chooStarted = true;

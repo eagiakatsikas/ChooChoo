@@ -2590,3 +2590,40 @@ body:not([data-tab='map']) .zoom-hint {
 .panel.search-panel {
   z-index: 1150;
 }
+
+/* Drag handle on sheets (phones) */
+.grab {
+  display: none;
+}
+@media (max-width: 899px) {
+  .grab {
+    display: block;
+    flex: none;
+    width: 40px;
+    height: 5px;
+    margin: -6px auto 6px;
+    border-radius: 3px;
+    background: rgba(120, 120, 110, 0.45);
+  }
+  .panel.detail .panel-head,
+  .panel.finder .panel-head {
+    touch-action: none;
+  }
+  .grab {
+    touch-action: none;
+  }
+  .panel.dragging {
+    transition: none;
+    user-select: none;
+  }
+  .panel.detail,
+  .panel.finder {
+    transition: height 0.18s ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel.detail,
+  .panel.finder {
+    transition: none;
+  }
+}
