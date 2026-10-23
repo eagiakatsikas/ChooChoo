@@ -1290,6 +1290,7 @@ const alerts = createAlerts({
   setTab: (t) => setTab(t),
   showTrain: (id) => showTrain(id),
   onChange() {
+    setTimeout(renderSaved, 0);
     const n = alerts ? alerts.list().length : 0;
     document.getElementById('alertCount').textContent = n ? n : '';
     if (selectedId) renderDetailHeader();
@@ -1306,6 +1307,7 @@ document.getElementById('alertsClose').onclick = () => setTab('map');
 function setAlertsOpen(open) {
   if (alerts.isOpen() === open) return;
   alerts.open(open);
+  if (open) setTimeout(renderSaved, 0);
   if (open) markTab('alerts');
   else if (tab === 'alerts') markTab('map');
 }
@@ -1345,6 +1347,7 @@ document.getElementById('homeClose').onclick = () => setTab('map');
 
 function setTab(name, preset = null) {
   setDisruptOpen(false);
+  document.getElementById('searchPanel').hidden = true;
   if (name !== 'home') setHomeOpen(false);
   if (name !== 'alerts') setAlertsOpen(false);
   if (name !== 'departures' && !finderEl.hidden) setFinderOpen(false);
@@ -2376,5 +2379,163 @@ showRidden.addEventListener('change', () => {
   store.set('showRidden', showRidden.checked);
   pollBuses();
 });
+
+// ---------- Saved: everything you've saved, in one place ----------
+function renderSaved() {
+  const el = document.getElementById('savedBody');
+  if (!el || document.getElementById('alertsPanel').hidden) return;
+  const rm = (kind, key, label) => `<button class="sv-rm" type="button" data-rm="${kind}" data-key="${esc(key)}" aria-label="Remove ${esc(label)}">×</button>`;
+  const section = (title, items, empty) =>
+    `<h3 class="sv-head">${title}</h3>${items.length ? `<ul class="sv-list">${items.join('')}</ul>` : `<p class="bp-intro">${empty}</p>`}`;
+  const commute = typeof commuteStations === 'function' ? commuteStations() : null;
+  const trainRoutes = favs
+    .map((f) => {
+      const a = byCrs(f.f), b = byCrs(f.t);
+      if (!a || !b) return '';
+      const label = `${short(a.n)} → ${short(b.n)}`;
+      return `<li><button class="sv-go" type="button" data-board="${f.f}|${f.t}">${esc(label)}</button>${rm('route', `${f.f}|${f.t}`, label)}</li>`;
+    })
+    .filter(Boolean);
+  const busRoutesL = busFavs.map(
+    (id) => `<li><button class="sv-go" type="button" data-busroute="${esc(id)}"><span class="bp-num">${esc(routeName(id))}</span> ${routeEnds(id)}</button>${rm('busroute', id, `route ${routeName(id)}`)}</li>`,
+  );
+  const stopsL = stopFavs.map(
+    (f) => `<li><button class="sv-go" type="button" data-stop="${esc(f.i)}">${esc(f.n)}</button>${rm('stop', f.i, f.n)}</li>`,
+  );
+  el.innerHTML = `
+    <h3 class="sv-head">Your commute</h3>
+    <div class="sv-commute">${
+      commute
+        ? `<b>${esc(short(commute.home.n))}</b> <span>and</span> <b>${esc(short(commute.work.n))}</b><button class="h-link" type="button" data-go="setup">Change</button>`
+        : `<span>Not set yet.</span><button class="h-link" type="button" data-go="setup">Set your stations</button>`
+    }</div>
+    ${section('Train routes', trainRoutes, 'Save a route from a departures board with ☆ Save route.')}
+    ${section('Bus routes', busRoutesL, 'Save a bus route from Ding Ding, or from a bus on the map.')}
+    ${section('Bus stops', stopsL, 'Tap a stop on the map, or find one in Ding Ding, then ☆ Save stop.')}`;
+}
+document.getElementById('savedBody').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.rm === 'route') {
+    const [f, t] = b.dataset.key.split('|');
+    favs = favs.filter((x) => !(x.f === f && x.t === t));
+    store.set('favs', favs);
+    renderFavs();
+  } else if (b.dataset.rm === 'busroute') toggleBusFav(b.dataset.key);
+  else if (b.dataset.rm === 'stop') toggleStopFav(b.dataset.key);
+  else if (b.dataset.board) {
+    const [f, t] = b.dataset.board.split('|');
+    return openBoard(f, t || null);
+  } else if (b.dataset.busroute) {
+    setTab('buses');
+    setBusSub('routes');
+  } else if (b.dataset.stop) {
+    const d = stopBoards.get(b.dataset.stop);
+    return openStop(b.dataset.stop, d?.la, d?.lo);
+  } else if (b.dataset.go === 'setup') return typeof openSetup === 'function' && openSetup();
+  renderSaved();
+});
+
+// ---------- Ding Ding: Routes · Stops · My buses ----------
+function setBusSub(name) {
+  for (const b of document.querySelectorAll('.subtabs [data-sub]')) b.setAttribute('aria-pressed', b.dataset.sub === name);
+  for (const d of document.querySelectorAll('#busPanel .sub')) d.hidden = d.dataset.sub !== name;
+  store.set('busSub', name);
+}
+for (const b of document.querySelectorAll('.subtabs [data-sub]')) b.onclick = () => setBusSub(b.dataset.sub);
+setBusSub(store.get('busSub', 'routes'));
+
+// ---------- One search for everything ----------
+const searchPanel = document.getElementById('searchPanel');
+const qInput = document.getElementById('qInput');
+const qResults = document.getElementById('qResults');
+let qTimer = null;
+let qStops = [];
+function setSearchOpen(open) {
+  searchPanel.hidden = !open;
+  if (open) {
+    setLayersOpen(false);
+    qInput.value = '';
+    qResults.innerHTML = '<p class="bp-intro">Search for a station, a bus stop, a bus route (e.g. 93), a train’s headcode (e.g. 2K25) or a bus’s registration.</p>';
+    loadStations().catch(() => {});
+    loadBusRoutes();
+    setTimeout(() => qInput.focus(), 50);
+  }
+}
+document.getElementById('searchOpen').onclick = () => setSearchOpen(searchPanel.hidden);
+document.getElementById('searchClose').onclick = () => setSearchOpen(false);
+qInput.addEventListener('input', () => {
+  renderSearch();
+  clearTimeout(qTimer);
+  const q = qInput.value.trim();
+  if (q.length < 2) return;
+  qTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`${WORKER}/api/stops?q=${encodeURIComponent(q)}`);
+      qStops = await res.json();
+    } catch {
+      qStops = [];
+    }
+    if (qInput.value.trim() === q) renderSearch();
+  }, 250);
+});
+function renderSearch() {
+  const raw = qInput.value.trim();
+  const q = raw.toLowerCase();
+  if (!q) return;
+  const groups = [];
+  const up = raw.toUpperCase().replace(/\s/g, '');
+  // Trains by headcode
+  const tr = [...trains.values()].filter((v) => v.hc && v.hc.toUpperCase().startsWith(up)).slice(0, 5);
+  if (tr.length && /^\d[A-Z]?\d{0,2}$/i.test(up)) {
+    groups.push(['Trains', tr.map((v) => `<li><button class="sv-go" type="button" data-train="${esc(v.id)}"><b>${esc(v.hc)}</b> ${esc(v.op)} · to ${esc(v.d)}</button></li>`)]);
+  }
+  // Buses by registration
+  const bs = [...buses.values()].filter((o) => o.v.id.startsWith(up)).slice(0, 5);
+  if (bs.length && up.length >= 3) {
+    groups.push(['Buses', bs.map((o) => `<li><button class="sv-go" type="button" data-bus="${esc(o.v.id)}"><span class="reg">${esc(o.v.id)}</span> route ${esc(o.v.n)} to ${esc(o.v.d)}</button></li>`)]);
+  }
+  // Stations
+  const st = search(raw).slice(0, 6);
+  if (st.length) groups.push(['Stations', st.map((s2) => `<li><button class="sv-go" type="button" data-board="${s2.c}|"><b>${esc(s2.n)}</b> <small>${s2.c}</small></button></li>`)]);
+  // Bus routes
+  const br = (busRoutes || []).filter((r) => r.n.toLowerCase().startsWith(q) || r.id === q).slice(0, 5);
+  if (br.length && q.length <= 4) {
+    groups.push(['Bus routes', br.map((r) => `<li><button class="sv-go" type="button" data-route="${esc(r.id)}"><span class="bp-num">${esc(r.n)}</span> ${esc(r.e[0])} – ${esc(r.e[1])}</button></li>`)]);
+  }
+  // Bus stops
+  if (qStops.length && q.length >= 2) {
+    groups.push(['Bus stops', qStops.slice(0, 6).map((x) => `<li><button class="sv-go" type="button" data-stop="${esc(x.i)}" data-la="${x.la}" data-lo="${x.lo}"><b>${esc(x.n)}</b> <small>${esc(x.r.join(', '))}</small></button></li>`)]);
+  }
+  qResults.innerHTML = groups.length
+    ? groups.map(([t, items]) => `<h3 class="sv-head">${t}</h3><ul class="sv-list">${items.join('')}</ul>`).join('')
+    : /^[A-Z]{2}\d{2}[A-Z]{3}$/.test(up)
+      ? '<p class="bp-intro">That bus isn’t on the map right now.</p>'
+      : '<p class="bp-intro">Nothing found yet.</p>';
+}
+qResults.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  setSearchOpen(false);
+  if (b.dataset.train) return showTrain(b.dataset.train);
+  if (b.dataset.bus) {
+    const o = buses.get(b.dataset.bus);
+    setTab('map');
+    select('bus:' + b.dataset.bus);
+    if (o) map.setView([o.v.la, o.v.lo], Math.max(map.getZoom(), 15));
+    return;
+  }
+  if (b.dataset.board) return openBoard(b.dataset.board.split('|')[0], null);
+  if (b.dataset.route) {
+    setTab('buses');
+    setBusSub('routes');
+    const bsInput = document.getElementById('busSearch');
+    bsInput.value = routeName(b.dataset.route);
+    renderBusLists();
+    return;
+  }
+  if (b.dataset.stop) return openStop(b.dataset.stop, Number(b.dataset.la), Number(b.dataset.lo));
+});
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !searchPanel.hidden && setSearchOpen(false));
 
 window.chooStarted = true;

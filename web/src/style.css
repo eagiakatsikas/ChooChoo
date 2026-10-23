@@ -2471,3 +2471,122 @@ body:not([data-tab='map']) .zoom-hint {
   background: var(--amber);
   color: #162720;
 }
+
+/* ===================== Clean-up: Saved, search, sub-tabs ===================== */
+.sv-head {
+  margin: 16px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sv-list li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #2c4539;
+}
+.sv-go {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 46px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--ivory);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+.sv-go small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.sv-rm {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.sv-commute {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--berth);
+  border: 1px solid var(--rule);
+}
+.sv-commute span {
+  color: var(--muted);
+}
+.sv-commute .h-link {
+  margin-left: auto;
+}
+.subtabs {
+  margin: 10px 0 6px;
+}
+.subtabs button[aria-pressed='true'] {
+  background: var(--amber);
+  color: #162720;
+}
+.sub[hidden] {
+  display: none;
+}
+/* Search */
+.hdr-search {
+  margin-left: auto;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--berth);
+  color: var(--ivory);
+  cursor: pointer;
+  align-self: center;
+}
+.hdr-search svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+@media (max-width: 899px) {
+  .hdr-search {
+    position: absolute;
+    right: 14px;
+    top: calc(var(--safe-t) + 14px);
+  }
+}
+.search-panel .panel-head {
+  gap: 8px;
+}
+#qInput {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--amber);
+  background: var(--berth);
+  font-size: 16px;
+}
+.panel.search-panel {
+  z-index: 1150;
+}

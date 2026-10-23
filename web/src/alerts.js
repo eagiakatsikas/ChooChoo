@@ -136,10 +136,8 @@ export function createAlerts(ctx) {
     const b = blocker();
     bodyEl.innerHTML = `
       ${note ? `<p class="al-note">${esc(note)}</p>` : b ? `<p class="al-note">${esc(b)}</p>` : ''}
-      <h3 class="bp-head">Trains you’re watching</h3>
-      ${list.length ? `<ul class="al-list">${itemsHtml()}</ul>` : '<p class="bp-intro">None yet.</p>'}
-      <h3 class="bp-head">How it works</h3>
-      <p class="bp-intro">Tap <b>Alert me</b> on a train (on Home, or after tapping a train on the map). You’ll get a notification when its platform is announced or changes, if it’s running late, and if it’s cancelled. Alerts stop once the train has left.</p>`;
+      ${list.length ? `<ul class="al-list">${itemsHtml()}</ul>` : ''}
+      <p class="bp-intro">${list.length ? '' : 'No trains being watched. '}Tap <b>Alert me</b> on a train to be told when its platform is announced or changes, if it’s late, or cancelled. Alerts stop once the train has left.</p>`;
   }
 
   bodyEl?.addEventListener('click', (e) => {
