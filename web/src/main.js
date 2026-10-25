@@ -409,9 +409,13 @@ map.on('click', (e) => {
     }
   }
   if (stn && (!best || stnD < 6)) return openBoard(stn, null);
-  // A bus stop, if no train or bus is right there
+  // A bus stop's name, tapped directly
+  for (const [, , id, box] of drawnStops) {
+    if (box && x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) return select('stop:' + id);
+  }
+  // A bus stop's dot, if it's at least as close as any train or bus
   let stop = null;
-  let stopD = 14;
+  let stopD = 18;
   for (const [px, py, id] of drawnStops) {
     const d = Math.hypot(px - x, py - y);
     if (d < stopD) {
@@ -419,7 +423,7 @@ map.on('click', (e) => {
       stopD = d;
     }
   }
-  if (stop && (!best || stopD < 5)) return select('stop:' + stop);
+  if (stop && (!best || stopD <= bestD || stopD < 9)) return select('stop:' + stop);
   if (best) return select(best);
   if (selectedId) closeDetail();
 });
@@ -722,7 +726,7 @@ function replaceAll(list) {
 
 function afterUpdate() {
   updateCounts();
-  if (selectedId && !isBus(selectedId)) {
+  if (selectedId && !isBus(selectedId) && !isStop(selectedId)) {
     if (trains.has(selectedId)) renderDetailHeader();
     else dState.textContent = 'No longer being tracked';
   }
@@ -2136,7 +2140,8 @@ function drawBusStops(size, z) {
   for (const st of mapStops) {
     const pt = toScreen(st.la, st.lo);
     if (pt.x < -10 || pt.y < -10 || pt.x > size.x + 10 || pt.y > size.y + 10) continue;
-    drawnStops.push([pt.x, pt.y, st.i]);
+    const entry = [pt.x, pt.y, st.i, null];
+    drawnStops.push(entry);
     const fav = stopFavs.some((f) => f.i === st.i);
     // A bus stop sign: white disc with a red ring (gold for your saved stops)
     ctx.beginPath();
@@ -2146,7 +2151,9 @@ function drawBusStops(size, z) {
     ctx.lineWidth = 2.2;
     ctx.strokeStyle = fav ? '#d4a64a' : BUS_RED;
     ctx.stroke();
-    if (z >= 17) {
+    if (z >= 16) {
+      // The name can be tapped too
+      entry[3] = [pt.x + 3, pt.y - 10, pt.x + 11 + ctx.measureText(st.n).width, pt.y + 9];
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(22,39,32,0.8)';
       ctx.strokeText(st.n, pt.x + 7, pt.y + 4);
