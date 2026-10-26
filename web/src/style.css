@@ -3764,3 +3764,34 @@ body:not([data-tab='map']) .status-tip {
     left: 12px;
   }
 }
+
+/* "‹ More" on panels opened from the More sheet */
+.head-l {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.panel .back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 2px -6px;
+  padding: 4px 8px 4px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--amber);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.panel .back .ic {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
+}
+.panel .back[hidden] {
+  display: none;
+}

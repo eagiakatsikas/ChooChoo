@@ -566,10 +566,7 @@ function setFiltersOpen(open) {
   filtersEl.classList.toggle('open', open);
   toggleBtn.setAttribute('aria-expanded', open);
 }
-toggleBtn.onclick = () => {
-  setLayersOpen(false);
-  setFiltersOpen(true);
-};
+toggleBtn.onclick = () => openSub('filters');
 document.getElementById('filtersClose').onclick = () => setFiltersOpen(false);
 // On wide screens the filter panel starts open
 // (The Operators list opens from the Layers sheet)
@@ -1199,7 +1196,10 @@ const alerts = createAlerts({
   store,
   esc,
   // Alerts that can't be set explain why on the Commute & alerts panel
-  setTab: () => setSettingsOpen(true),
+  setTab: () => {
+    noBack('alertsPanel');
+    setSettingsOpen(true);
+  },
   showTrain: (id) => showTrain(id),
   onChange() {
     if (selectedId && !isPlace(selectedId)) renderDetailHeader();
@@ -1358,15 +1358,34 @@ layersEl.addEventListener('click', (e) => {
   if (!['layersclose', 'replaybtn', 'busall', 'showridden'].includes(name)) usage.track('more:' + name);
 });
 document.getElementById('layersClose').onclick = () => setLayersOpen(false);
-document.getElementById('mDisrupt').onclick = () => {
-  setLayersOpen(false);
-  setDisruptOpen(true);
+document.getElementById('mDisrupt').onclick = () => openSub('disruptPanel');
+document.getElementById('mMyBuses').onclick = () => openSub('busPanel');
+document.getElementById('mSettings').onclick = () => openSub('alertsPanel');
+
+// Panels opened from More have a "‹ More" button back to it (× still closes everything)
+const SUBS = {
+  disruptPanel: (o) => setDisruptOpen(o),
+  filters: (o) => setFiltersOpen(o),
+  busPanel: (o) => setBusPanelOpen(o),
+  alertsPanel: (o) => setSettingsOpen(o),
+  usagePanel: (o) => setUsageOpen(o),
 };
-document.getElementById('mMyBuses').onclick = () => {
+const backBtn = (id) => document.querySelector(`#${id} .back`);
+function openSub(id) {
   setLayersOpen(false);
-  setBusPanelOpen(true);
-};
-document.getElementById('mSettings').onclick = () => setSettingsOpen(true);
+  for (const k of Object.keys(SUBS)) backBtn(k).hidden = true;
+  SUBS[id](true);
+  backBtn(id).hidden = false;
+}
+for (const id of Object.keys(SUBS)) {
+  backBtn(id).onclick = () => {
+    SUBS[id](false);
+    backBtn(id).hidden = true;
+    setLayersOpen(true);
+  };
+}
+/** Opened some other way (the ⚠ badge, an alert that couldn't be set): no way "back" to More. */
+const noBack = (id) => (backBtn(id).hidden = true);
 
 // ---------- Usage: how many phones use Choo Choo, and which parts ----------
 const usagePanel = document.getElementById('usagePanel');
@@ -1444,6 +1463,10 @@ async function setUsageOpen(open) {
     body.innerHTML = '<p class="bp-intro">Couldn’t reach the server.</p>';
     return;
   }
+  if (!u || !u.week || !u.days) {
+    body.innerHTML = '<p class="bp-intro">The server hasn’t got usage counting yet. It arrives with the next server update.</p>';
+    return;
+  }
   const w = u.week;
   const max = Math.max(1, ...u.days.map((d) => d.devices));
   const label = (k) => USAGE_LABELS[k] || k.replace(/^more:/, 'More: ').replace(/^act:/, 'Tapped ');
@@ -1475,7 +1498,7 @@ async function setUsageOpen(open) {
     ${w.errors.length ? `<p class="us-note">Errors: ${w.errors.map((x) => `${esc(x.key)}${x.count > 1 ? ` ×${x.count}` : ''}`).join('; ')}</p>` : ''}
     <p class="b-foot">Anonymous: each phone has a random ID it made itself. No names, accounts or locations are recorded, and nothing leaves your own server. Kept for 90 days.${u.allTime.since ? ` Counting since ${day(u.allTime.since)}.` : ''}</p>`;
 }
-document.getElementById('mUsage').onclick = () => setUsageOpen(true);
+document.getElementById('mUsage').onclick = () => openSub('usagePanel');
 document.getElementById('usageClose').onclick = () => setUsageOpen(false);
 
 // A notification was tapped while the app was closed: show that train once it's on the map
@@ -1544,7 +1567,10 @@ function setDisruptOpen(open) {
     setBusPanelOpen(false);
   }
 }
-disruptPill.onclick = () => setDisruptOpen(document.getElementById('disruptPanel').hidden);
+disruptPill.onclick = () => {
+  noBack('disruptPanel');
+  setDisruptOpen(document.getElementById('disruptPanel').hidden);
+};
 document.getElementById('disruptClose').onclick = () => setDisruptOpen(false);
 /** For Home: disruption on the operators running your trains. */
 function disruptionNote(ops) {
