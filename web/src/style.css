@@ -373,11 +373,11 @@ button {
   top: calc(12px + var(--safe-t));
   width: 360px;
   max-height: calc(100vh - 24px - var(--safe-t));
-  padding: 26px 22px 18px;
+  padding: 16px 20px 18px;
   background: var(--ivory);
   color: var(--ivory-ink);
   border: 0;
-  border-radius: 180px 180px 10px 10px / 40px 40px 10px 10px;
+  border-radius: 10px; /* same as the other panels */
 }
 .detail .close {
   color: var(--ivory-muted);
@@ -588,7 +588,7 @@ button {
     max-height: 46vh;
     max-height: 46dvh;
     padding: 16px 18px calc(10px + var(--safe-b));
-    border-radius: 50% 50% 0 0 / 22px 22px 0 0;
+    border-radius: 18px 18px 0 0;
   }
   .detail h2.d-route {
     font-size: 26px;
@@ -645,7 +645,7 @@ button {
     width: auto;
     max-height: 62vh;
     max-height: 62dvh;
-    border-radius: 50% 50% 0 0 / 40px 40px 0 0;
+    border-radius: 18px 18px 0 0; /* the same rounding as every sheet */
     border-bottom: 0;
     padding-bottom: calc(16px + var(--safe-b));
   }
