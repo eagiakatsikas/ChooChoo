@@ -11,6 +11,7 @@ import { startAlerts } from './alerts.js';
 import { startDisruptions } from './disruptions.js';
 import { startHistory } from './history.js';
 import { startEurostar } from './eurostar.js';
+import { startAnalytics } from './analytics.js';
 
 async function loadReference({ fresh = false } = {}) {
   const naptan = await download(config.naptanUrl, 'naptan-rail.csv', { maxAgeHours: fresh ? 0 : 24 * 7 });
@@ -54,6 +55,7 @@ async function main() {
   startDisruptions();
   startHistory();
   startEurostar();
+  startAnalytics();
   if (!hasCredentials()) {
     feedState.lastError = 'Waiting for a Network Rail login: set NR_USERNAME and NR_PASSWORD (see README).';
     console.error(feedState.lastError);

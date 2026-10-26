@@ -15,6 +15,7 @@ import { getThere } from './getthere.js';
 import { fleetInfo } from './fleet.js';
 import { disruptions } from './disruptions.js';
 import { watchPairs, historyFor, historyInfo } from './history.js';
+import { ingest, usage, analyticsState } from './analytics.js';
 
 const clients = new Set();
 let lastViews = new Map(); // id → JSON string
@@ -119,6 +120,7 @@ export function startServer() {
         eurostar: euroState,
         disruptions: { at: disruptions.at, count: disruptions.lines.length, error: disruptions.error },
         history: historyInfo(),
+        analytics: analyticsState,
         stats,
         clients: clients.size,
       });
@@ -163,6 +165,14 @@ export function startServer() {
       const to = url.searchParams.get('t');
       return json(res, 200, f && to ? historyFor(f, to) : { ok: true });
     }
+    if (url.pathname === '/api/ev' && req.method === 'POST') {
+      // Usage events from the app (sent as text/plain, so no preflight is needed)
+      readJson(req)
+        .then((body) => json(res, 200, ingest(body)))
+        .catch((err) => json(res, 400, { error: err.message }));
+      return;
+    }
+    if (url.pathname === '/api/usage') return json(res, 200, usage());
     if (url.pathname === '/api/push/key') return json(res, 200, { key: publicKey() });
     if (url.pathname.startsWith('/api/alerts') && req.method === 'POST') {
       readJson(req)

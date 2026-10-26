@@ -3649,3 +3649,77 @@ button.chip {
     display: none !important;
   }
 }
+
+/* Usage */
+.us-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.us-tiles div {
+  padding: 10px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--berth);
+  text-align: center;
+}
+.us-tiles b {
+  display: block;
+  font-family: var(--display);
+  font-size: 34px;
+  line-height: 1;
+  color: var(--amber);
+}
+.us-tiles small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.us-note {
+  margin: 10px 2px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.us-note b {
+  color: var(--ivory);
+}
+.us-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 90px;
+  padding: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--berth);
+}
+.us-chart span {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--amber);
+}
+.us-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.us-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.us-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px solid #2c4539;
+  font-size: 14px;
+}
+.us-list b {
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}

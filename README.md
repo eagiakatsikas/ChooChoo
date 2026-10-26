@@ -100,6 +100,8 @@ On first open, Choo Choo asks for your home and work stations, your location, an
 
 Everything opens in the same sheet over the map: a station's board, a bus stop's arrivals, a bus route and its buses, or a train or bus and its stops. Drag it up for more or flick it down to close. **Star** a station, a station-to-station route, a bus stop or a bus route to keep it on Now and in Search. Trains have **Alert me** (platform, delays, cancellation) and **Follow**; buses have **Follow** and **I'm on it**. On iPhone, notifications only work once Choo Choo is on the home screen.
 
+**Usage** (under ⋯ More) shows how many phones use Choo Choo each day and which parts get used: sheets opened, stars, alerts, searches that found nothing, how quickly trains appear, and errors. It's anonymous: each phone sends a random ID it made itself and short event names, to your own server only, and the counts are kept for 90 days.
+
 Your saved routes and alerts are kept on your phone. The server records how your saved routes' trains arrive (30 days) for the reliability figures, and keeps the last hour of train positions for replay.
 
 **Eurostar** trains carry on beyond the Channel Tunnel to Paris, Brussels and Amsterdam using Eurostar's own open data (timetable plus live delays, from France's open data portal), placed between stations on the high-speed lines.
@@ -128,6 +130,7 @@ Get a free key at https://api-portal.tfl.gov.uk (subscribe to the 500 requests a
 | `GET /api/busto?la=&lo=&crs=` | Buses from where you are to a station |
 | `GET /api/disruptions` | Line status (National Rail operators and TfL rail lines) |
 | `GET /api/history?f=RAY&t=WAT` | How a saved route's trains have run |
+| `POST /api/ev` · `GET /api/usage` | Anonymous usage events from the app, and the daily totals |
 | `GET /api/replay?t=` | Train positions at a time in the last hour |
 | `POST /api/alerts` | Watch a train (Web Push subscription + train) |
 | `GET /api/status` | Feed connection, counts, message stats |

@@ -7,6 +7,7 @@ import { OPERATORS, opName, opColour, delayColour } from './operators.js';
 import { demoSnapshot, demoDetail } from './demo.js';
 import { createHome } from './home.js';
 import { createAlerts } from './alerts.js';
+import { createUsage } from './usage.js';
 
 // ---------- Data source ----------
 const params = new URLSearchParams(location.search);
@@ -83,6 +84,9 @@ const store = {
     } catch {}
   },
 };
+const usage = createUsage({ WORKER, DEMO, store });
+window.addEventListener('error', (e) => usage.track('error', { m: e.message || 'script error' }));
+window.addEventListener('unhandledrejection', (e) => usage.track('error', { m: String(e.reason && e.reason.message ? e.reason.message : e.reason) }));
 const hidden = new Set(store.get('hiddenOps', []));
 let colourMode = store.get('colourMode', 'delay');
 let query = '';
@@ -700,6 +704,8 @@ function select(id) {
   if (!selectedId && tab !== 'map') detailFrom = tab;
   if (following && following !== id) setFollow(null);
   if (selectedId !== id) {
+    usage.track('sheet:' + (isStop(id) ? 'stop' : isStn(id) ? 'stn' : isRoute(id) ? 'route' : isBus(id) ? 'bus' : 'train'));
+    usage.track('from:' + (selectedId ? 'sheet' : tab));
     dCalls.innerHTML = '';
     dBoard.innerHTML = '';
     dState.innerHTML = '';
@@ -767,6 +773,7 @@ dActs.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b || !selectedId) return;
   const a = b.dataset.act;
+  if (['follow', 'to', 'clearto'].includes(a)) usage.track('act:' + a); // stars, alerts and rides are counted where they happen
   if (a === 'follow') return setFollow(following ? null : selectedId);
   if (a === 'alert') {
     const own = alerts.list().find((x) => x.key === selectedId);
@@ -830,6 +837,9 @@ function connect() {
     skew = d.now - Date.now();
     replaceAll(d.trains);
     setStatus(d.live ? 'live' : 'stale', d.live ? 'Live' : 'Feed reconnecting');
+    const secs = performance.now() / 1000;
+    usage.trackOnce(`ready:${secs < 2 ? 'under2s' : secs < 5 ? '2to5s' : secs < 10 ? '5to10s' : 'over10s'}`);
+    if (!d.live) usage.trackOnce('feed:stale');
   });
   es.addEventListener('delta', (e) => {
     const d = JSON.parse(e.data);
@@ -918,6 +928,7 @@ function toggleFav() {
   if (!stn.from) return;
   if (isFav()) favs = favs.filter((x) => !(x.f === stn.from && (x.t || null) === (stn.to || null)));
   else favs = [{ f: stn.from, t: stn.to || null }, ...favs].slice(0, 16);
+  usage.track(isFav() ? (stn.to ? 'star:route' : 'star:stn') : 'unstar');
   store.set('favs', favs);
   renderStationHeader();
   home.render();
@@ -1004,6 +1015,7 @@ dBoard.addEventListener('click', (e) => {
   if (!row) return;
   const id = row.dataset.id;
   if (!id || !trains.get(id)) {
+    usage.track('board:notyet');
     row.querySelector('.b-sub')?.insertAdjacentHTML('beforeend', ' · not on the map yet');
     return;
   }
@@ -1061,6 +1073,7 @@ dPick.addEventListener('keydown', (e) => {
 });
 
 function setTo(crs) {
+  if (crs) usage.track('to:pick');
   stn.to = crs || null;
   toFor = { ...toFor, [stn.from]: stn.to };
   store.set('toFor', toFor);
@@ -1153,6 +1166,7 @@ setBarHeight();
 if (window.ResizeObserver) new ResizeObserver(setBarHeight).observe(barEl);
 window.addEventListener('resize', setBarHeight);
 function markTab(name) {
+  if (name !== tab) usage.track('tab:' + name);
   tab = name;
   store.set('lastTab', name);
   setTimeout(updateZoomHint, 0);
@@ -1172,6 +1186,15 @@ const alerts = createAlerts({
     home.render();
   },
 });
+{
+  // Count alerts set (and ones that couldn't be), wherever they're set from
+  const watch = alerts.watch;
+  alerts.watch = async (...a) => {
+    const ok = await watch(...a);
+    usage.track(ok ? 'alert:set' : 'alert:fail');
+    return ok;
+  };
+}
 document.getElementById('alertsClose').onclick = () => setSettingsOpen(false);
 /** Commute & alerts: your two stations, weekday alerts, and the trains you're watching. */
 function setSettingsOpen(open) {
@@ -1230,6 +1253,7 @@ function setTab(name, keepSheet = false) {
   setDisruptOpen(false);
   setLayersOpen(false);
   alerts.open(false);
+  usagePanel.hidden = true;
   setFiltersOpen(false);
   setBusPanelOpen(false);
   if (name !== 'map' && !keepSheet && window.matchMedia('(max-width: 899px)').matches) closeDetail();
@@ -1269,16 +1293,19 @@ map.on('zoomend', updateZoomHint);
 setTimeout(() => !showBuses && busShapes.remove(), 0); // after the bus layer is set up
 document.getElementById('qtTrains').onclick = () => {
   showTrains = !showTrains;
+  usage.track(showTrains ? 'trains:on' : 'trains:off');
   applyLayers();
 };
 document.getElementById('qtBuses').onclick = () => {
   showBuses = !showBuses;
+  usage.track(showBuses ? 'buses:on' : 'buses:off');
   applyLayers();
   pollBuses();
   loadMapStops();
 };
 document.getElementById('busAll').onclick = () => {
   busesOn = !busesOn;
+  usage.track(busesOn ? 'allbuses:on' : 'allbuses:off');
   if (busesOn) showBuses = true;
   applyLayers();
   pollBuses();
@@ -1298,7 +1325,18 @@ function setLayersOpen(open) {
     document.getElementById('mRides').textContent = rides.length ? `${rides.length} ${rides.length === 1 ? 'ride' : 'rides'}` : '';
   }
 }
-document.getElementById('moreBtn').onclick = () => setLayersOpen(layersEl.hidden);
+document.getElementById('moreBtn').onclick = () => {
+  if (layersEl.hidden) usage.track('more:open');
+  setLayersOpen(layersEl.hidden);
+};
+// Which of the More items get used
+layersEl.addEventListener('click', (e) => {
+  const b = e.target.closest('button[id], [data-colour], [data-basemap]');
+  if (!b) return;
+  const name = b.dataset.colour ? 'colour' : b.dataset.basemap ? 'mapstyle' : b.id.replace(/^m/, '').toLowerCase();
+  // (replay and every-bus switches are counted by their own handlers)
+  if (!['layersclose', 'replaybtn', 'busall', 'showridden'].includes(name)) usage.track('more:' + name);
+});
 document.getElementById('layersClose').onclick = () => setLayersOpen(false);
 document.getElementById('mDisrupt').onclick = () => {
   setLayersOpen(false);
@@ -1309,6 +1347,116 @@ document.getElementById('mMyBuses').onclick = () => {
   setBusPanelOpen(true);
 };
 document.getElementById('mSettings').onclick = () => setSettingsOpen(true);
+
+// ---------- Usage: how many phones use Choo Choo, and which parts ----------
+const usagePanel = document.getElementById('usagePanel');
+const USAGE_LABELS = {
+  'open:app': 'Opened from the home screen',
+  'open:browser': 'Opened in a browser',
+  'tab:home': 'Went to Now',
+  'tab:map': 'Went to Map',
+  'tab:search': 'Went to Search',
+  'sheet:stn': 'Opened a station',
+  'sheet:stop': 'Opened a bus stop',
+  'sheet:route': 'Opened a bus route',
+  'sheet:train': 'Opened a train',
+  'sheet:bus': 'Opened a bus',
+  'from:home': '…from Now',
+  'from:search': '…from Search',
+  'from:map': '…from the map',
+  'from:sheet': '…from another sheet',
+  'star:stn': 'Starred a station',
+  'star:route': 'Starred a station-to-station route',
+  'star:stop': 'Starred a bus stop',
+  'star:busroute': 'Starred a bus route',
+  unstar: 'Took a star off',
+  'to:pick': 'Picked a destination on a board',
+  'alert:set': 'Set an alert on a train',
+  'alert:fail': 'Couldn’t set an alert',
+  'auto:on': 'Turned on weekday alerts',
+  'auto:off': 'Turned off weekday alerts',
+  'act:follow': 'Tapped Follow',
+  'act:to': 'Opened Where to? on a board',
+  'act:clearto': 'Cleared a board’s destination',
+  'more:disrupt': 'Opened Disruption',
+  'more:filtertoggle': 'Opened Train operators',
+  'more:mybuses': 'Opened My buses',
+  'more:settings': 'Opened Commute & alerts',
+  'more:usage': 'Opened Usage',
+  'more:colour': 'Changed train colours',
+  'more:mapstyle': 'Changed the map style',
+  'showridden:off': 'Hid buses they’ve been on',
+  'showridden:on': 'Showed buses they’ve been on',
+  ride: 'Logged a bus ride',
+  'search:hit': 'Searched and found something',
+  'search:miss': 'Searched and found nothing',
+  'board:notyet': 'Tapped a train not on the map yet',
+  replay: 'Replayed the last hour',
+  'trains:off': 'Hid trains',
+  'trains:on': 'Showed trains',
+  'buses:off': 'Hid buses',
+  'buses:on': 'Showed buses',
+  'allbuses:on': 'Turned on every bus',
+  'allbuses:off': 'Turned off every bus',
+  'more:open': 'Opened ⋯ More',
+  'loc:on': 'Shared their location',
+  'loc:denied': 'Said no to location',
+  'loc:failed': 'Location didn’t work',
+  'ready:under2s': 'Trains appeared in under 2 s',
+  'ready:2to5s': 'Trains appeared in 2–5 s',
+  'ready:5to10s': 'Trains appeared in 5–10 s',
+  'ready:over10s': 'Trains took over 10 s to appear',
+  'feed:stale': 'Opened while the feed was reconnecting',
+  error: 'Something went wrong (an error)',
+};
+async function setUsageOpen(open) {
+  usagePanel.hidden = !open;
+  if (!open) return;
+  setLayersOpen(false);
+  closeDetail();
+  const body = document.getElementById('usageBody');
+  body.innerHTML = '<p class="bp-intro">Loading…</p>';
+  await usage.flush(); // this phone's latest first
+  let u;
+  try {
+    u = await (await fetch(`${WORKER}/api/usage`)).json();
+  } catch {
+    body.innerHTML = '<p class="bp-intro">Couldn’t reach the server.</p>';
+    return;
+  }
+  const w = u.week;
+  const max = Math.max(1, ...u.days.map((d) => d.devices));
+  const label = (k) => USAGE_LABELS[k] || k.replace(/^more:/, 'More: ').replace(/^act:/, 'Tapped ');
+  const group = (pred) => w.events.filter((x) => pred(x.key));
+  const list = (items) =>
+    items.length ? `<ul class="us-list">${items.map((x) => `<li><span>${esc(label(x.key))}</span><b>${x.count}</b></li>`).join('')}</ul>` : '<p class="bp-intro">Nothing yet.</p>';
+  const day = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  body.innerHTML = `
+    <div class="us-tiles">
+      <div><b>${u.today.devices}</b><small>today</small></div>
+      <div><b>${w.devices}</b><small>last 7 days</small></div>
+      <div><b>${u.month.devices}</b><small>last 30 days</small></div>
+    </div>
+    <p class="us-note">Phones or computers using Choo Choo. ${w.newDevices ? `<b>${w.newDevices}</b> new this week. ` : ''}This week: ${w.phone} on a phone, ${w.app} from the home screen.</p>
+    <h3 class="sv-head">Last 30 days</h3>
+    <div class="us-chart" role="img" aria-label="Phones using Choo Choo each day">${u.days
+      .map((d) => `<span title="${day(d.day)}: ${d.devices} ${d.devices === 1 ? 'phone' : 'phones'}, ${d.events} actions" style="height:${Math.round((d.devices / max) * 100)}%"></span>`)
+      .join('')}</div>
+    <div class="us-axis"><span>${day(u.days[0].day)}</span><span>Today</span></div>
+    <h3 class="sv-head">What gets used (last 7 days)</h3>
+    ${list(group((k) => /^(sheet|from|tab):/.test(k)))}
+    <h3 class="sv-head">Saving, alerts and extras</h3>
+    ${list(group((k) => !/^(sheet|from|tab|open|ready|feed|loc|search):/.test(k) && k !== 'error'))}
+    <h3 class="sv-head">Search</h3>
+    ${list(group((k) => k.startsWith('search:')))}
+    ${w.misses.length ? `<p class="us-note">Searches that found nothing: ${w.misses.map((x) => `<b>${esc(x.key)}</b>${x.count > 1 ? ` ×${x.count}` : ''}`).join(', ')}</p>` : ''}
+    <h3 class="sv-head">How it’s running</h3>
+    ${list(group((k) => /^(open|ready|feed|loc):/.test(k) || k === 'error'))}
+    ${w.errors.length ? `<p class="us-note">Errors: ${w.errors.map((x) => `${esc(x.key)}${x.count > 1 ? ` ×${x.count}` : ''}`).join('; ')}</p>` : ''}
+    <p class="b-foot">Anonymous: each phone has a random ID it made itself. No names, accounts or locations are recorded, and nothing leaves your own server. Kept for 90 days.${u.allTime.since ? ` Counting since ${day(u.allTime.since)}.` : ''}</p>`;
+}
+document.getElementById('mUsage').onclick = () => setUsageOpen(true);
+document.getElementById('usageClose').onclick = () => setUsageOpen(false);
 
 // A notification was tapped while the app was closed: show that train once it's on the map
 const wantTrain = params.get('train');
@@ -1449,6 +1597,7 @@ function setReplay(on) {
   fetchReplay();
 }
 replayBtn.onclick = () => {
+  if (!replay) usage.track('replay');
   setLayersOpen(false);
   setReplay(!replay);
 };
@@ -1771,6 +1920,7 @@ const routeEnds = (id) => {
 
 function toggleBusFav(id) {
   busFavs = busFavs.includes(id) ? busFavs.filter((x) => x !== id) : [...busFavs, id];
+  usage.track(busFavs.includes(id) ? 'star:busroute' : 'unstar');
   store.set('busFavs', busFavs);
   drawBusShapes();
   if (isBus(selectedId)) renderBusHeader();
@@ -1865,6 +2015,7 @@ function logRide(v) {
     rides = rides.filter((x) => x !== last);
   } else {
     const f = busFactsCache.get(v.id);
+    usage.track('ride');
     rides = [{ reg: v.id, route: v.r, name: v.n, dest: v.d, at: Date.now(), deck: f?.deck || null, model: f?.model || null }, ...rides].slice(0, 1000);
   }
   saveRides();
@@ -2055,6 +2206,7 @@ function openStop(id, la, lo) {
 
 function toggleStopFav(id, name) {
   stopFavs = stopFavs.some((f) => f.i === id) ? stopFavs.filter((f) => f.i !== id) : [...stopFavs, { i: id, n: name }].slice(0, 12);
+  usage.track(stopFavs.some((f) => f.i === id) ? 'star:stop' : 'unstar');
   store.set('busStopFavs', stopFavs);
   if (selectedId === 'stop:' + id) renderStopHeader();
   home.render();
@@ -2101,6 +2253,7 @@ function startMe(centre) {
       (p) => {
         me = { la: p.coords.latitude, lo: p.coords.longitude, acc: p.coords.accuracy || 0 };
         home.setHere(me);
+        usage.trackOnce('loc:on');
         locateBtn.classList.remove('busy');
         locateBtn.setAttribute('aria-pressed', 'true');
         store.set('locOn', true);
@@ -2112,6 +2265,7 @@ function startMe(centre) {
       (err) => {
         locateBtn.classList.remove('busy');
         home.setHere(null, err.code === 1);
+        usage.trackOnce(err.code === 1 ? 'loc:denied' : 'loc:failed');
         if (err.code === 1) {
           // Location turned off for this site: don't keep asking when the map opens
           stopMe();
@@ -2162,11 +2316,13 @@ showRidden.onclick = () => {
   const on = showRidden.getAttribute('aria-checked') !== 'true';
   showRidden.setAttribute('aria-checked', on);
   store.set('showRidden', on);
+  usage.track(on ? 'showridden:on' : 'showridden:off');
   pollBuses();
 };
 
 // ---------- Commute & alerts ----------
 async function setAuto(on) {
+  usage.track(on ? 'auto:on' : 'auto:off');
   const c = store.get('commute', null);
   const ok = await alerts.setAuto(on, c && c.home, c && c.work);
   home.render();
@@ -2221,6 +2377,7 @@ const qInput = document.getElementById('qInput');
 const qResults = document.getElementById('qResults');
 let qTimer = null;
 let qStops = [];
+let qCountTimer = null;
 function setSearchOpen(open) {
   searchPanel.hidden = !open;
   if (!open) return;
@@ -2246,6 +2403,13 @@ qInput.addEventListener('input', () => {
     }
     if (qInput.value.trim() === q) renderSearch();
   }, 250);
+  // Once you've stopped typing: did it find anything?
+  clearTimeout(qCountTimer);
+  qCountTimer = setTimeout(() => {
+    if (qInput.value.trim() !== q || searchPanel.hidden) return;
+    const hit = qResults.querySelector('.sv-go');
+    usage.track(hit ? 'search:hit' : 'search:miss', hit ? {} : { q });
+  }, 1800);
 });
 
 const pin = (kind, text = '') => `<span class="pin ${kind}">${kind === 'rail' ? ICON.rail : kind === 'bus' ? ICON.stop : text}</span>`;
