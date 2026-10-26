@@ -1,6 +1,6 @@
-// Home: your commute at a glance. Picks your saved route in the direction you're likely
-// travelling (from where you are, or failing that the time of day), and shows the next
-// good train, when to leave, and your other saved routes.
+// Now: what should I catch? Your commute the right way round (from where you are, or failing
+// that the time of day) with the next good train and when to leave; then the stations and
+// bus stops nearest you; then everything you've starred.
 //
 // Everything it needs from the rest of the app comes in through `ctx`.
 
@@ -24,14 +24,23 @@ export function createHome(ctx) {
     return Math.hypot(x, y);
   }
 
-  function locate() {
-    if (!navigator.geolocation) return;
+  let locFailed = false;
+  function locate(ask = false) {
+    if (!navigator.geolocation || (!ask && ctx.store.get('locDenied', false))) {
+      locFailed = true;
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (p) => {
+        locFailed = false;
         here = { la: p.coords.latitude, lo: p.coords.longitude, at: Date.now() };
         refresh(); // the direction may have changed, so fetch that board too
       },
-      () => {},
+      (err) => {
+        locFailed = true;
+        if (err.code === 1) ctx.store.set('locDenied', true);
+        render();
+      },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
     );
   }
@@ -40,7 +49,7 @@ export function createHome(ctx) {
   function pair() {
     const c = ctx.commute && ctx.commute();
     if (c) return { a: c.home, b: c.work, set: true };
-    const f = ctx.favs()[0];
+    const f = ctx.favs().find((x) => x.t);
     const a = f && ctx.byCrs(f.f);
     const b = f && ctx.byCrs(f.t);
     return a && b ? { a, b, set: false } : null;
@@ -149,6 +158,7 @@ export function createHome(ctx) {
   async function fetchHistory(c) {
     const watch = ctx
       .favs()
+      .filter((f) => f.t)
       .flatMap((f) => [`${f.f}-${f.t}`, `${f.t}-${f.f}`])
       .slice(0, 10)
       .join(',');
@@ -246,38 +256,140 @@ export function createHome(ctx) {
       return u == null ? null : u - walk - 2; // a couple of minutes to find the platform
     };
     const b = spare(best);
-    if (b != null && b >= 0) return `<p class="h-leave">${b === 0 ? 'Leave now' : `Leave in ${b} min`} to ${verb} this one</p>`;
+    if (b != null && b >= 0) return `<p class="h-leave">${b === 0 ? 'Leave now' : `Leave in ${b} min`}<small> · ${esc(tr.text)}</small></p>`;
     const next = rows.find((r) => !r.cancelled && (spare(r) ?? -1) >= 0);
     if (!next) return `<p class="h-leave">It’s ${tr.text} to the station: too far for the next few trains</p>`;
     const s2 = spare(next);
     return `<p class="h-leave">Too late to ${verb} this one. ${s2 === 0 ? 'Leave now' : `Leave in ${s2} min`} for the ${esc(next.std)}</p>`;
   }
 
+  // ----- Places near you and places you've starred -----
+  let near = null; // { la, lo, stops: [...] } from the worker
+  const pin = (kind) => `<span class="pin ${kind}">${kind === 'rail' ? ctx.icon.rail : ctx.icon.stop}</span>`;
+
+  /** The two nearest stations (within a walk or a short ride) and the two nearest bus stops. */
+  function nearby() {
+    if (!here) return [];
+    const list = ctx.stations() || [];
+    const st = list
+      .map((s) => [metres(here.la, here.lo, s), s])
+      .filter(([d]) => d < 2500)
+      .sort((a, b) => a[0] - b[0])
+      .slice(0, 2)
+      .map(([d, s]) => ({ kind: 'stn', d, s }));
+    const sp = (near && near.stops ? near.stops : [])
+      .filter((x) => x.d < 500)
+      .slice(0, 2)
+      .map((x) => ({ kind: 'stop', d: x.d, x }));
+    return [...st, ...sp].sort((a, b) => a.d - b.d);
+  }
+
+  const dist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+
+  /** The next few trains from a board, as small chips. */
+  function trainChips(d, to) {
+    if (!d) return '<span class="chip quiet">…</span>';
+    const rows = d.rows.filter((r) => !r.cancelled).slice(0, 3);
+    if (!rows.length) return `<span class="chip quiet">${to ? 'No direct trains soon' : 'No trains soon'}</span>`;
+    return rows
+      .map((r) => {
+        const late = r.etdTime && r.etdTime !== r.std;
+        const where = to ? `arr ${esc(r.etaTime || r.sta || '')}` : esc(ctx.short(r.dest));
+        return `<span class="chip"><b class="${late ? 'late' : ''}">${esc(late ? r.etdTime : r.std)}</b> ${where}${r.plat ? ` · ${esc(r.plat)}` : ''}</span>`;
+      })
+      .join('');
+  }
+
+  /** What's due at a bus stop, a chip per route. */
+  function busChips(d) {
+    if (!d) return '<span class="chip quiet">…</span>';
+    if (d.error || !d.rows.length) return '<span class="chip quiet">Nothing due soon</span>';
+    const byRoute = new Map();
+    for (const r of d.rows) (byRoute.get(r.route) || byRoute.set(r.route, []).get(r.route)).push(r.m);
+    return [...byRoute]
+      .slice(0, 4)
+      .map(([rt, ms]) => {
+        const t = ms.slice(0, 2).map((m) => (m <= 0 ? 'due' : m));
+        return `<span class="chip">${ctx.busBadge(rt)} ${t.join(', ')}${t[t.length - 1] === 'due' ? '' : ' min'}</span>`;
+      })
+      .join('');
+  }
+
+  function stationCard(f, t, side) {
+    const a = ctx.byCrs(f);
+    const b = t && ctx.byCrs(t);
+    if (!a) return '';
+    return `<button class="place-card" type="button" data-board="${f}|${t || ''}">
+      <span class="pc-head">${pin('rail')}<b>${esc(b ? `${ctx.short(a.n)} → ${ctx.short(b.n)}` : a.n)}</b><span class="pc-side">${side}</span></span>
+      <span class="chips">${trainChips(boards.get(`${f}|${t || ''}`), t)}</span></button>`;
+  }
+
+  function stopCard(id, name, side, la, lo) {
+    const d = ctx.stopBoard(id);
+    return `<button class="place-card" type="button" data-stop="${esc(id)}" data-la="${la ?? d?.la ?? ''}" data-lo="${lo ?? d?.lo ?? ''}">
+      <span class="pc-head">${pin('bus')}<b>${esc(d ? d.name : name)}</b><span class="pc-side">${side}</span></span>
+      ${d && d.towards ? `<span class="pc-sub">towards ${esc(d.towards)}</span>` : ''}
+      <span class="chips">${busChips(d)}</span></button>`;
+  }
+
+  function nearbyHtml() {
+    let inner;
+    if (!here) {
+      inner = locFailed
+        ? `<div class="h-card h-quiet"><p>See the stations and bus stops nearest you, with what’s leaving next.</p><button class="h-btn" type="button" data-me="1">Use my location</button></div>`
+        : '<p class="h-quiet-line">Finding where you are…</p>';
+    } else {
+      const list = nearby();
+      inner = list.length
+        ? list.map((p) => (p.kind === 'stn' ? stationCard(p.s.c, null, dist(p.d)) : stopCard(p.x.i, p.x.n, dist(p.d), p.x.la, p.x.lo))).join('')
+        : '<p class="h-quiet-line">No stations or bus stops close by.</p>';
+    }
+    return `<h3 class="sec-head"><span>Nearby</span>${here ? '<button class="h-link" type="button" data-go="map">See on map</button>' : ''}</h3>${inner}`;
+  }
+
+  function starredHtml(skip) {
+    const star = `<span class="star-on">${ctx.icon.starOn}</span>`;
+    const cards = [];
+    for (const f of ctx.favs()) {
+      if (skip && f.t && ((f.f === skip.a.c && f.t === skip.b.c) || (f.f === skip.b.c && f.t === skip.a.c))) continue; // that's your commute, above
+      cards.push(stationCard(f.f, f.t, star));
+    }
+    for (const f of ctx.stopFavs()) cards.push(stopCard(f.i, f.n, star));
+    const routes = ctx.busFavs();
+    if (routes.length) {
+      cards.push(`<div class="place-card static"><span class="pc-head">${pin('bus')}<b>Bus routes</b><span class="pc-side">${star}</span></span>
+        <span class="chips">${routes.map((r) => `<button class="chip" type="button" data-route="${esc(r)}">${ctx.busBadge(ctx.routeName(r))}</button>`).join('')}</span></div>`);
+    }
+    if (!cards.length) return `<h3 class="sec-head"><span>Starred</span></h3><p class="h-quiet-line">Open a station, bus stop or bus route and tap <b>Star</b> to keep it here.</p>`;
+    return `<h3 class="sec-head"><span>Starred</span></h3>${cards.join('')}`;
+  }
+
   function render() {
     if (el.hidden) return;
-    const h = new Date().getHours();
-    document.getElementById('homeTitle').textContent = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-    const favs = ctx.favs();
-    if (!pair()) {
-      body.innerHTML = `<div class="h-empty">
-        <p><b>Set up your commute to see it here.</b></p>
-        <p>Choose your home and work stations, and Choo Choo shows the next good train the right way round, with its platform and when to leave.</p>
+    const loc = document.getElementById('nowLoc');
+    if (loc) {
+      const n = here && (ctx.stations() || []).reduce((best, s) => (!best || metres(here.la, here.lo, s) < metres(here.la, here.lo, best) ? s : best), null);
+      loc.innerHTML = n ? `<span class="lamp" aria-hidden="true"></span>near ${esc(ctx.short(n.n))}` : '';
+    }
+    const pr = pair();
+    let html = '';
+    if (!pr) {
+      html += `<section class="h-card h-quiet">
+        <p><b>Set up your commute</b> and Now shows your next train the right way round, with its platform and when to leave.</p>
         <button class="h-btn" type="button" data-go="setup">Set up your commute</button>
-      </div>` + extrasHtml();
-      return;
+      </section>`;
     }
     const c = commute();
-    let html = '';
     if (c) {
       const d = boards.get(`${c.from.c}|${c.to.c}`);
       const walk = walkMins(c.from);
       const tr = travel(c.from);
+      const autoOn = ctx.alerts() && ctx.alerts().autoOn();
       html += `<section class="h-card">
         <div class="h-route">
           <div><small>Your commute</small><b>${esc(ctx.short(c.from.n))} → ${esc(ctx.short(c.to.n))}</b></div>
-          <button class="h-swap" type="button" aria-label="Swap direction" title="Swap direction">${ctx.icon ? ctx.icon.swap : '⇄'}</button>
-        </div>
-        <p class="h-why">This way round because ${c.why}.${tr ? ` About ${esc(tr.text)} to ${esc(ctx.short(c.from.n))}.` : ''}</p>`;
+          <button class="h-swap" type="button" aria-label="Other way round" title="This way round because ${esc(c.why)}. Tap to swap.">${ctx.icon ? ctx.icon.swap : '⇄'}</button>
+        </div>`;
       if (!d) html += '<p class="b-empty">Checking departures…</p>';
       else if (!d.rows.length) html += `<p class="b-empty">No direct trains in the next two hours.</p>`;
       else {
@@ -294,76 +406,79 @@ export function createHome(ctx) {
           if (ok.length) best = ok.reduce((a, b) => ((minsUntil(b.etaTime || b.sta) ?? 9999) < (minsUntil(a.etaTime || a.sta) ?? 9999) ? b : a));
         }
         const shown = d.rows.filter((r) => !r.cancelled || r === best);
-        const from = Math.max(0, shown.indexOf(best) - 1); // one you've missed for context, then the rest
-        const rows = shown.slice(from, from + 3).map((r) => ({ ...r, best: r === best, _missed: missed(r) }));
+        const after = shown.slice(shown.indexOf(best) + 1, shown.indexOf(best) + 3).map((r) => ({ ...r, best: false, _missed: missed(r) }));
         const top = trainRow(best, walk);
-        html += `<div class="h-next">
-          <div class="h-big"><span class="h-time">${esc(best.etdTime || best.std)}</span>
-            <span class="h-in">${top.until != null ? (top.until <= 0 ? 'due now' : `in ${top.until} min`) : ''}</span></div>
-          <div class="h-plat"><b>${esc(best.plat || '–')}</b><small>${best.plat ? (best.platLive ? 'Platform' : 'Planned platform') : 'Platform not yet known'}</small></div>
-        </div>
+        const [exp, cls] = ctx.expText(best);
+        const alertOn = best.id && ctx.alerts() && ctx.alerts().has(best.id);
+        html += `<button class="h-next" type="button" ${best.id ? `data-id="${esc(best.id)}"` : ''} data-crs="${c.from.c}">
+          <span class="h-big"><span class="h-time">${esc(best.etdTime || best.std)}</span>
+            <span class="h-in">${top.until != null ? (top.until <= 0 ? 'due now' : `in ${top.until} min`) : ''}<small class="b-exp ${cls}">${best.cancelled ? 'Cancelled' : exp}${best.etaTime || best.sta ? ` · arr ${esc(best.etaTime || best.sta)}` : ''}</small></span></span>
+          <span class="h-plat"><b>${esc(best.plat || '–')}</b><small>${best.plat ? (best.platLive ? 'Platform' : 'Planned') : 'Platform'}</small></span>
+        </button>
         ${leaveLine(d.rows, best, tr)}
-        ${best.id && ctx.alerts() ? `<button class="h-alert" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${ctx.alerts().has(best.id)}">${ctx.alerts().has(best.id) ? 'Alert on for this train' : `Alert me about the ${esc(best.std)}`}</button>` : ''}
-        <div class="board h-board">${rows.map((r) => trainRow(r, walk).html).join('')}</div>
-        <p class="b-foot">${d.source === 'national-rail' ? 'Live times and platforms from National Rail' : 'Timetabled platforms until the station announces them'} · ${ctx.fresh ? ctx.fresh(d._at || Date.now()) : ''}</p>`;
+        <div class="acts">${
+          best.id && ctx.alerts() ? `<button class="act" type="button" data-alert="${esc(best.id)}" data-crs="${c.from.c}" aria-pressed="${Boolean(alertOn)}">${ctx.icon.bell} ${alertOn ? 'Alert on' : `Alert me`}</button>` : ''
+        }<button class="act" type="button" data-auto="1" aria-pressed="${Boolean(autoOn)}" title="Weekdays, 6–10am from home and 4–8pm from work, Choo Choo picks your next good train and alerts you about it">${ctx.icon.bell} ${autoOn ? 'Every weekday: on' : 'Every weekday'}</button></div>
+        ${after.length ? `<div class="h-later">${after.map((r) => trainRow(r, walk).html).join('')}</div>` : ''}
+        <p class="b-foot">${d.source === 'national-rail' ? 'Live from National Rail' : 'Timetabled platforms until announced'} · ${ctx.fresh ? ctx.fresh(d._at || Date.now()) : ''} · <button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full board</button></p>`;
       }
-      html += `<div class="h-more"><button class="h-link" type="button" data-board="${c.from.c}|${c.to.c}">Full departures board</button><button class="h-link" type="button" data-board="${c.from.c}|">All trains from ${esc(ctx.short(c.from.n))}</button></div>`;
       html += '</section>';
-      // Everything else folds away under the main card
+      // Disruption on your trains, then the extras folded away
       const dz = ctx.disruptionNote && d ? ctx.disruptionNote(d.rows.map((r) => r.op)) : '';
-      if (dz) html += fold('dz', 'Disruption on your trains', dz, '');
+      if (dz) html += dz;
       html += fold('there', `Getting to ${esc(ctx.short(c.from.n))}`, thereSection(c.from, tr) || (tr && tr.options ? '' : busSection(c.from, walk)), tr ? esc(tr.text) : '');
       const h7 = hist.get(`${c.from.c}|${c.to.c}`);
       const pct = h7 && h7.week && h7.week.trains >= 3 ? `${Math.round((h7.week.onTime / h7.week.trains) * 100)}% on time` : '';
       html += fold('rel', 'How reliable it’s been', reliability(c), pct);
     }
-    // Other saved routes, one line each (not the commute itself)
-    const pr = pair();
-    const others = favs.filter((f) => !pr || !((f.f === pr.a.c && f.t === pr.b.c) || (f.f === pr.b.c && f.t === pr.a.c)));
-    if (others.length) {
-      let inner = '<ul class="h-routes">';
-      for (const f of others) {
-        const a = ctx.byCrs(f.f);
-        const b = ctx.byCrs(f.t);
-        if (!a || !b) continue;
-        const d = boards.get(`${f.f}|${f.t}`);
-        const r = d && (d.rows.find((x) => x.best) || d.rows[0]);
-        const [exp, cls] = r ? ctx.expText(r) : ['', ''];
-        inner += `<li><button type="button" data-board="${f.f}|${f.t}"><span class="h-r">${esc(ctx.short(a.n))} → ${esc(ctx.short(b.n))}</span>
-          <span class="h-n">${r ? `${esc(r.std)} <span class="b-exp ${cls}">${exp}</span>${r.plat ? ` · plat ${esc(r.plat)}` : ''}` : d ? 'No direct trains soon' : '…'}</span></button></li>`;
-      }
-      inner += '</ul>';
-      html += fold('others', 'Your other routes', inner, `${others.length}`);
-    }
-    body.innerHTML = html + extrasHtml();
+    html += nearbyHtml();
+    html += starredHtml(pr);
+    body.innerHTML = html;
   }
 
-  /** Sections added by the rest of the app (bus stops, alerts), folded like the rest. */
-  function extrasHtml() {
-    return extras
-      .map((f, i) => {
-        const r = f();
-        if (!r) return '';
-        if (typeof r === 'string') return r;
-        return fold(r.id || `x${i}`, r.title, r.html, r.hint || '');
-      })
-      .join('');
+  async function fetchNear() {
+    if (!here) return;
+    if (near && Math.hypot(near.la - here.la, near.lo - here.lo) < 0.001) return;
+    try {
+      const res = await fetch(`${ctx.WORKER}/api/stops?la=${here.la.toFixed(5)}&lo=${here.lo.toFixed(5)}`);
+      const list = await res.json();
+      near = { la: here.la, lo: here.lo, stops: Array.isArray(list) ? list : [] };
+    } catch {}
   }
 
+  let busy = false;
+  let again = false; // asked for while busy (e.g. your location arrived): go round once more
   async function refresh() {
     if (el.hidden) return;
-    const c = commute();
-    const jobs = [];
-    if (c) jobs.push(fetchBoard(c.from.c, c.to.c));
-    if (c && (walkMins(c.from) ?? 0) > 10) {
-      // TfL's journey planner first; the simple bus finder only if that has nothing
-      jobs.push(fetchThere(c.from).then(() => (there.options.length ? null : fetchBusTo(c.from))));
+    if (busy) return void (again = true);
+    busy = true;
+    again = false;
+    try {
+      const c = commute();
+      const jobs = [];
+      if (c) jobs.push(fetchBoard(c.from.c, c.to.c));
+      if (c && (walkMins(c.from) ?? 0) > 10) {
+        // TfL's journey planner first; the simple bus finder only if that has nothing
+        jobs.push(fetchThere(c.from).then(() => (there.options.length ? null : fetchBusTo(c.from))));
+      }
+      if (c) jobs.push(fetchHistory(c));
+      // Your starred stations, routes and stops
+      for (const f of ctx.favs().slice(0, 8)) jobs.push(fetchBoard(f.f, f.t || ''));
+      for (const f of ctx.stopFavs().slice(0, 6)) jobs.push(ctx.fetchStop(f.i));
+      // What's near you
+      jobs.push(
+        fetchNear().then(() => {
+          const list = nearby();
+          return Promise.all(list.map((p) => (p.kind === 'stn' ? fetchBoard(p.s.c, '') : ctx.fetchStop(p.x.i))));
+        }),
+      );
+      render();
+      await Promise.all(jobs.map((j) => j.then(render, () => {})));
+      render();
+    } finally {
+      busy = false;
+      if (again) refresh();
     }
-    if (c) jobs.push(fetchHistory(c));
-    for (const f of ctx.favs().slice(0, 6)) jobs.push(fetchBoard(f.f, f.t));
-    render();
-    await Promise.all(jobs);
-    render();
   }
 
   body.addEventListener('click', (e) => {
@@ -380,6 +495,12 @@ export function createHome(ctx) {
     }
     if (b.dataset.go === 'setup') return ctx.openSetup && ctx.openSetup();
     if (b.dataset.go) return ctx.setTab(b.dataset.go);
+    if (b.dataset.me) {
+      ctx.startMe();
+      locFailed = false;
+      render();
+      return locate(true);
+    }
     if (b.dataset.alert) {
       const a = ctx.alerts();
       const own = a.list().find((x) => x.key === b.dataset.alert);
@@ -387,12 +508,16 @@ export function createHome(ctx) {
       else a.watch(b.dataset.alert, b.dataset.crs);
       return;
     }
+    if (b.dataset.auto) return ctx.setAuto(!ctx.alerts().autoOn());
+    if (b.dataset.route) return ctx.openRoute(b.dataset.route);
+    if (b.dataset.stop) return ctx.openStop(b.dataset.stop, Number(b.dataset.la) || null, Number(b.dataset.lo) || null);
     if (b.dataset.board) {
       const [from, to] = b.dataset.board.split('|');
       return ctx.openBoard(from, to || null);
     }
-    if (b.dataset.id && !ctx.showTrain(b.dataset.id, b.closest('.h-card')?.querySelector('[data-crs]')?.dataset.crs)) {
-      b.querySelector('.b-sub')?.insertAdjacentHTML('beforeend', ' · not on the map yet');
+    if (b.dataset.id && !ctx.showTrain(b.dataset.id, b.dataset.crs || b.closest('.h-card')?.querySelector('[data-crs]')?.dataset.crs)) {
+      const sub = b.querySelector('.b-sub, .h-in small');
+      if (sub && !/not on the map/.test(sub.textContent)) sub.insertAdjacentHTML('beforeend', ' · not on the map yet');
     }
   });
 
@@ -406,7 +531,10 @@ export function createHome(ctx) {
       } catch {}
       locate();
       refresh();
-      timer = setInterval(refresh, REFRESH_MS);
+      timer = setInterval(() => {
+        if (!here || Date.now() - here.at > 5 * 60000) locate();
+        refresh();
+      }, REFRESH_MS);
     },
     isOpen: () => !el.hidden,
     render,

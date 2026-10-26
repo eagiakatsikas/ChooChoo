@@ -24,33 +24,24 @@
   <body>
     <div id="map" aria-label="Map of trains around London"></div>
 
-    <header class="bar">
+    <header class="bar" aria-label="Live map">
       <h1 class="sr-only">Choo Choo</h1>
-      <button class="hdr-search" id="searchOpen" type="button" aria-label="Search">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-        <span>Search</span>
-      </button>
+      <p class="status" id="status" data-state="connecting" title="Connecting">
+        <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
+      </p>
+      <button class="qt" id="qtTrains" type="button" aria-pressed="true" title="Show or hide trains"><span class="lk train" aria-hidden="true"></span><span class="qt-t">Trains</span></button>
+      <button class="qt" id="qtBuses" type="button" aria-pressed="true" title="Show or hide buses"><span class="lk bus" aria-hidden="true"></span><span class="qt-t">Buses</span></button>
       <button class="dz-badge" id="disruptPill" type="button" hidden aria-label="Disruption"></button>
-      <div class="bar-info">
-        <p class="status" id="status" data-state="connecting" title="Connecting">
-          <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
-        </p>
-        <button class="qt" id="qtTrains" type="button" aria-pressed="true" title="Show or hide trains"><span class="lk train" aria-hidden="true"></span><span class="qt-t"></span></button>
-        <button class="qt" id="qtBuses" type="button" aria-pressed="true" title="Show or hide buses"><span class="lk bus" aria-hidden="true"></span><span class="qt-t"></span></button>
-        <p class="count" id="count" hidden></p>
-      </div>
+      <p class="count" id="count" hidden></p>
     </header>
+    <button class="fab more-btn" id="moreBtn" type="button" aria-expanded="false" aria-controls="layers" aria-label="More" title="More">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor"/></svg>
+    </button>
 
     <p class="offline" id="offline" hidden>Can’t reach Choo Choo’s server just now. It may be restarting; retrying…</p>
     <div class="map-fabs" role="group" aria-label="Map tools">
-      <button class="fab" id="layersBtn" type="button" aria-expanded="false" aria-controls="layers" aria-label="Map layers" title="Map layers">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>
-      </button>
       <button class="fab" id="locateBtn" type="button" aria-pressed="false" aria-label="Show where I am" title="Show where I am">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
-      </button>
-      <button class="fab" id="replayBtn" type="button" aria-pressed="false" aria-label="Replay the last hour" title="Replay the last hour">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>
       </button>
     </div>
     <button class="zoom-hint" id="zoomHint" type="button" hidden>Zoom in to see every bus</button>
@@ -61,25 +52,24 @@
       <button class="rp-live" id="rpLive" type="button">Back to live</button>
     </div>
 
-    <aside class="panel sheet layers" id="layers" hidden aria-label="Map layers">
+    <aside class="panel sheet layers more" id="layers" hidden aria-label="More">
       <div class="panel-head">
-        <h2>Map</h2>
+        <h2>More</h2>
         <button class="close" id="layersClose" aria-label="Close">×</button>
       </div>
-      <p class="ly-count" id="lyCount"></p>
+      <button class="ly-link" id="mDisrupt" type="button"><span class="ly-label"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>Disruption</span><span class="ly-sum" id="mDisruptSum"></span></button>
+      <button class="ly-link" id="replayBtn" type="button" aria-pressed="false"><span class="ly-label"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>Replay the last hour</span></button>
       <div class="ly-row">
-        <span class="ly-label"><span class="lk train" aria-hidden="true"></span>Trains</span>
-        <button class="switch" id="layerTrains" type="button" role="switch" aria-checked="true" aria-label="Show trains"></button>
+        <span class="ly-label"><span>Every bus when zoomed in<small class="ly-hint">Off: just your starred routes and buses you’ve been on</small></span></span>
+        <button class="switch" id="busAll" type="button" role="switch" aria-checked="false" aria-label="Show every bus when zoomed in"></button>
       </div>
-      <div class="ly-row ly-col">
-        <span class="ly-label"><span class="lk bus" aria-hidden="true"></span>Buses</span>
-        <div class="seg seg3" role="group" aria-label="Which buses">
-          <button data-busmode="off" aria-pressed="false">Off</button>
-          <button data-busmode="mine" aria-pressed="true">Mine</button>
-          <button data-busmode="all" aria-pressed="false">All</button>
-        </div>
-        <small class="ly-hint" id="busModeHint"></small>
+      <div class="ly-row">
+        <span class="ly-label"><span>Buses I’ve been on<small class="ly-hint">Wherever they are in London</small></span></span>
+        <button class="switch" id="showRidden" type="button" role="switch" aria-checked="true" aria-label="Show buses I’ve been on"></button>
       </div>
+      <button class="ly-link" id="filterToggle" type="button" aria-expanded="false" aria-controls="filters">
+        <span class="ly-label">Train operators</span><span class="ly-sum" id="filterSummary">All</span>
+      </button>
       <div class="ly-row ly-col">
         <span class="ly-label">Colour trains by</span>
         <div class="seg" role="group" aria-label="Colour trains by">
@@ -87,9 +77,6 @@
           <button data-colour="op" aria-pressed="false">Operator</button>
         </div>
       </div>
-      <button class="ly-link" id="filterToggle" type="button" aria-expanded="false" aria-controls="filters">
-        <span>Operators</span><span class="ly-sum" id="filterSummary">All</span>
-      </button>
       <div class="ly-row ly-col">
         <span class="ly-label">Map style</span>
         <div class="seg seg3 basemap-switch" role="group" aria-label="Map style">
@@ -98,43 +85,22 @@
           <button data-basemap="satellite" aria-pressed="false">Satellite</button>
         </div>
       </div>
+      <button class="ly-link" id="mMyBuses" type="button"><span class="ly-label"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8 18v2M16 18v2"/></svg>My buses</span><span class="ly-sum" id="mRides"></span></button>
+      <button class="ly-link" id="mSettings" type="button"><span class="ly-label"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>Commute &amp; alerts</span></button>
     </aside>
 
-    <aside class="panel filters bus-panel" id="busPanel" aria-label="Buses">
+    <aside class="panel filters bus-panel" id="busPanel" aria-label="My buses">
       <div class="panel-head">
-        <h2>Ding Ding</h2>
-        <button class="close" id="busClose" aria-label="Close buses">×</button>
+        <h2>My buses</h2>
+        <button class="close" id="busClose" aria-label="Close">×</button>
       </div>
-      <div class="seg seg3 subtabs" role="tablist" aria-label="Buses">
-        <button data-sub="routes" aria-pressed="true">Routes</button>
-        <button data-sub="stops" aria-pressed="false">Stops</button>
-        <button data-sub="mine" aria-pressed="false">My buses</button>
-      </div>
-      <div class="sub" data-sub="routes">
-        <input id="busSearch" type="search" placeholder="Find a route, e.g. 93" autocomplete="off" inputmode="search" />
-        <ul class="bp-list" id="busResults"></ul>
-        <h3 class="bp-head">Your routes</h3>
-        <ul class="bp-list" id="busFavList"></ul>
-        <p class="bp-note" id="busNote" role="status"></p>
-      </div>
-      <div class="sub" data-sub="stops" hidden>
-        <input id="stopSearch" type="search" placeholder="Find a bus stop by name" autocomplete="off" />
-        <ul class="bp-list" id="stopResults"></ul>
-        <button class="h-link" id="stopsNearBtn" type="button">Bus stops near me</button>
-        <ul class="bp-list" id="stopsNear"></ul>
-        <h3 class="bp-head">Your stops</h3>
-        <div id="busStopFavs"></div>
-      </div>
-      <div class="sub" data-sub="mine" hidden>
-        <label class="bp-switch"><input type="checkbox" id="showRidden" /> Show buses I’ve been on, wherever they are</label>
-        <div id="myBuses"></div>
-      </div>
+      <div id="myBuses"></div>
     </aside>
 
-    <aside class="panel filters" id="filters" aria-label="Filters">
+    <aside class="panel filters" id="filters" aria-label="Train operators">
       <div class="panel-head">
         <h2>Operators</h2>
-        <button class="close" id="filtersClose" aria-label="Close filters">×</button>
+        <button class="close" id="filtersClose" aria-label="Close operators">×</button>
       </div>
       <input id="search" type="search" placeholder="Find a headcode or station" autocomplete="off" />
       <div class="bulk">
@@ -149,60 +115,36 @@
       </p>
     </aside>
 
-    <section class="panel finder" id="finder" hidden aria-label="Departures">
-      <div class="panel-head">
-        <h2>Departures</h2>
-        <button class="close" id="finderClose" aria-label="Close train finder">×</button>
-      </div>
-      <div class="f-route">
-        <div class="f-field">
-          <label for="fFrom">From</label>
-          <input id="fFrom" type="text" placeholder="Your station" autocomplete="off" spellcheck="false" />
-          <button class="f-icon" id="fLocate" type="button" aria-label="Use my location">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-          </button>
-        </div>
-        <div class="f-field">
-          <label for="fTo">To</label>
-          <input id="fTo" type="text" placeholder="Where to? (optional)" autocomplete="off" spellcheck="false" />
-          <button class="f-icon" id="fSwap" type="button" aria-label="Swap From and To">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/></svg>
-          </button>
-        </div>
-        <ul class="f-suggest" id="fSuggest" role="listbox" aria-label="Stations" hidden></ul>
-      </div>
-      <p class="f-note" id="fNote" role="status"></p>
-      <div class="f-favs" id="fFavs" aria-label="Saved routes"></div>
-      <div class="board" id="fBoard" aria-live="polite"></div>
-    </section>
-
-    <section class="panel home" id="home" hidden aria-label="Your commute">
-      <div class="panel-head">
-        <h2 id="homeTitle">Your commute</h2>
-        <button class="close" id="homeClose" aria-label="Close">×</button>
+    <section class="panel home tabpanel" id="home" hidden aria-label="Now">
+      <div class="panel-head tab-head">
+        <h2 id="homeTitle">Now</h2>
+        <p class="now-loc" id="nowLoc"></p>
       </div>
       <div id="homeBody"></div>
     </section>
 
-    <section class="panel home alerts" id="alertsPanel" hidden aria-label="Saved">
-      <div class="panel-head">
-        <h2>Saved</h2>
-        <button class="close" id="alertsClose" aria-label="Close">×</button>
+    <section class="panel home tabpanel search-panel" id="searchPanel" hidden aria-label="Search">
+      <div class="panel-head tab-head">
+        <h2>Search</h2>
       </div>
-      <div id="savedBody"></div>
-      <h3 class="sv-head">Alerts</h3>
-      <div id="alertsBody"></div>
-    </section>
-
-    <section class="panel home search-panel" id="searchPanel" hidden aria-label="Search">
-      <div class="panel-head">
-        <input id="qInput" type="search" placeholder="Station, bus stop, route, train or bus reg" autocomplete="off" spellcheck="false" />
-        <button class="close" id="searchClose" aria-label="Close search">×</button>
-      </div>
+      <label class="q-box">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <input id="qInput" type="search" placeholder="Station, bus stop, route, train or bus" autocomplete="off" spellcheck="false" aria-label="Search" />
+      </label>
       <div id="qResults"></div>
     </section>
 
-    <section class="panel home disrupt" id="disruptPanel" hidden aria-label="Disruption">
+    <section class="panel home overlay alerts" id="alertsPanel" hidden aria-label="Commute and alerts">
+      <div class="panel-head">
+        <h2>Commute &amp; alerts</h2>
+        <button class="close" id="alertsClose" aria-label="Close">×</button>
+      </div>
+      <div id="savedBody"></div>
+      <h3 class="sv-head">Trains you’re watching</h3>
+      <div id="alertsBody"></div>
+    </section>
+
+    <section class="panel home overlay disrupt" id="disruptPanel" hidden aria-label="Disruption">
       <div class="panel-head">
         <h2>Disruption</h2>
         <button class="close" id="disruptClose" aria-label="Close">×</button>
@@ -213,14 +155,15 @@
     <section class="panel detail" id="detail" hidden aria-live="polite">
       <div class="panel-head">
         <p class="d-op"><span id="dHeadcode"></span><span id="dOp"></span></p>
-        <button class="d-follow" id="dAlert" type="button" aria-pressed="false">Alert me</button>
-        <button class="d-follow" id="dFollow" type="button" aria-pressed="false">Follow</button>
-        <button class="close" id="detailClose" aria-label="Close train details">×</button>
+        <button class="close" id="detailClose" aria-label="Close">×</button>
       </div>
       <h2 class="d-route" id="dRoute"></h2>
       <p class="d-from" id="dFrom"></p>
+      <div class="d-acts" id="dActs"></div>
+      <div class="d-pick" id="dPick" hidden></div>
       <p class="d-state" id="dState"></p>
       <ol class="calls" id="dCalls"></ol>
+      <div class="board d-board" id="dBoard" hidden></div>
       <p class="d-foot" id="dFoot"></p>
     </section>
 
@@ -233,19 +176,13 @@
 
     <nav class="tabbar" aria-label="Choo Choo">
       <button data-tab="home" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg><span>Home</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg><span>Now</span>
       </button>
       <button data-tab="map" aria-pressed="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Map</span>
       </button>
-      <button data-tab="departures" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h4M7 14h7M16 10h1M17 14h0"/></svg><span>Departures</span>
-      </button>
-      <button data-tab="alerts" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg><span>Saved<b id="alertCount"></b></span>
-      </button>
-      <button data-tab="buses" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8 18v2M16 18v2M8 14.5h.01M16 14.5h.01"/></svg><span>Ding Ding<b id="busSummary"></b></span>
+      <button data-tab="search" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Search</span>
       </button>
     </nav>
 

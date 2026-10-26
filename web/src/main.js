@@ -35,6 +35,10 @@ const ICON = {
   play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>'),
   pause: svg('<path d="M8 5.5v13M16 5.5v13" stroke-width="3"/>'),
   swap: svg('<path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/>'),
+  dest: svg('<path d="M4 12h14M13 7l5 5-5 5"/>'),
+  rail: svg('<path d="M5 20 9 4M19 20 15 4M7 15h10M8 10h8"/>'),
+  stop: svg('<circle cx="12" cy="9" r="5.5"/><path d="M12 14.5V21"/>'),
+  clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
 };
 /** "updated 20s ago", kept ticking by the timer below. */
 function fresh(at) {
@@ -48,6 +52,10 @@ setInterval(() => {
   for (const el of document.querySelectorAll('.fresh[data-at]')) el.textContent = agoText(Number(el.dataset.at));
 }, 5000);
 const isStop = (id) => typeof id === 'string' && id.startsWith('stop:');
+const isStn = (id) => typeof id === 'string' && id.startsWith('stn:');
+const isRoute = (id) => typeof id === 'string' && id.startsWith('route:');
+/** Places and routes (not things that move): the sheet shows a board, not a journey. */
+const isPlace = (id) => isStop(id) || isStn(id) || isRoute(id);
 function store0(k, d) {
   try {
     const v = localStorage.getItem('lt.' + k);
@@ -79,7 +87,7 @@ const hidden = new Set(store.get('hiddenOps', []));
 let colourMode = store.get('colourMode', 'delay');
 let query = '';
 let selectedId = null;
-let tab = 'map'; // bottom navigation: home, map, departures, alerts, buses
+let tab = 'map'; // bottom navigation: home (Now), map, search
 let showTrains = store0('showTrains', true);
 let showBuses = store0('showBuses', true);
 const boardCrs = new Map(); // train id → the station you'd board at (when opened from a board)
@@ -396,7 +404,7 @@ map.on('click', (e) => {
   }
   // A station's name, tapped directly, wins
   for (const [, , crs, box] of drawnStations) {
-    if (box && x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) return openBoard(crs, null);
+    if (box && x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) return openBoard(crs, undefined, false);
   }
   // A station's dot, if it's clearly closer than any train or bus
   let stn = null;
@@ -408,7 +416,7 @@ map.on('click', (e) => {
       stnD = d;
     }
   }
-  if (stn && (!best || stnD < 6)) return openBoard(stn, null);
+  if (stn && (!best || stnD < 6)) return openBoard(stn, undefined, false);
   // A bus stop's name, tapped directly
   for (const [, , id, box] of drawnStops) {
     if (box && x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]) return select('stop:' + id);
@@ -445,21 +453,15 @@ function setStatus(state, text) {
 
 let trainsShown = 0;
 function renderCount() {
-  const t = `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}`;
   const nb = showBuses ? buses.size : 0;
-  const which = busesOn && map.getZoom() >= BUS_ZOOM ? 'in view' : 'yours';
-  countEl.textContent = nb ? `${t} · ${nb} ${nb === 1 ? 'bus' : 'buses'} (${which})` : `${t} on the map`;
-  const ly = document.getElementById('lyCount');
-  if (ly) ly.textContent = countEl.textContent;
-  // Quick switches in the top bar: the counts double as on/off buttons
+  // The counts in the top bar double as on/off switches
   const qt = document.getElementById('qtTrains');
   const qb = document.getElementById('qtBuses');
-  if (qt && qb) {
-    qt.setAttribute('aria-pressed', showTrains);
-    qt.querySelector('.qt-t').textContent = showTrains ? `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}` : 'Trains off';
-    qb.setAttribute('aria-pressed', showBuses);
-    qb.querySelector('.qt-t').textContent = showBuses ? `${nb} ${nb === 1 ? 'bus' : 'buses'}${nb ? ` (${which})` : ''}` : 'Buses off';
-  }
+  qt.setAttribute('aria-pressed', showTrains);
+  qt.querySelector('.qt-t').textContent = showTrains ? `${trainsShown} ${trainsShown === 1 ? 'train' : 'trains'}` : 'Trains off';
+  qb.setAttribute('aria-pressed', showBuses);
+  qb.querySelector('.qt-t').textContent = showBuses ? `${nb} ${nb === 1 ? 'bus' : 'buses'}` : 'Buses off';
+  if (selectedId && isRoute(selectedId)) renderRouteHeader();
 }
 
 function updateCounts() {
@@ -541,9 +543,8 @@ function setFiltersOpen(open) {
   toggleBtn.setAttribute('aria-expanded', open);
 }
 toggleBtn.onclick = () => {
-  const open = !filtersEl.classList.contains('open');
-  if (open) setLayersOpen(false);
-  setFiltersOpen(open);
+  setLayersOpen(false);
+  setFiltersOpen(true);
 };
 document.getElementById('filtersClose').onclick = () => setFiltersOpen(false);
 // On wide screens the filter panel starts open
@@ -558,6 +559,10 @@ const dFrom = document.getElementById('dFrom');
 const dState = document.getElementById('dState');
 const dCalls = document.getElementById('dCalls');
 const dFoot = document.getElementById('dFoot');
+const dActs = document.getElementById('dActs');
+const dBoard = document.getElementById('dBoard');
+const dPick = document.getElementById('dPick');
+let peekRoute = null; // a bus route you're looking at, shown live even if you haven't starred it
 let detailTimer = null;
 let scrolledFor = null;
 let anchoredStop = '';
@@ -605,17 +610,16 @@ function trainSpeed(v) {
 }
 
 function renderDetailHeader() {
-  const ab = document.getElementById('dAlert');
-  ab.hidden = DEMO || isBus(selectedId) || isStop(selectedId);
-  document.getElementById('dFollow').hidden = isStop(selectedId);
-  dCalls.classList.toggle('deps', isStop(selectedId));
-  if (isStop(selectedId)) return renderStopHeader();
-  if (!ab.hidden) {
-    const on = alerts && alerts.has(selectedId);
-    ab.setAttribute('aria-pressed', Boolean(on));
-    ab.innerHTML = on ? `${ICON.bell} Alert on` : `${ICON.bell} Alert me`;
-  }
-  if (isBus(selectedId)) return renderBusHeader();
+  const kind = isStop(selectedId) ? 'stop' : isStn(selectedId) ? 'stn' : isRoute(selectedId) ? 'route' : isBus(selectedId) ? 'bus' : 'train';
+  detailEl.dataset.kind = kind;
+  dCalls.classList.toggle('deps', kind === 'stop' || kind === 'route');
+  dCalls.hidden = kind === 'stn';
+  dBoard.hidden = kind !== 'stn';
+  if (kind !== 'stn') dPick.hidden = true;
+  if (kind === 'stop') return renderStopHeader();
+  if (kind === 'stn') return renderStationHeader();
+  if (kind === 'route') return renderRouteHeader();
+  if (kind === 'bus') return renderBusHeader();
   const v = trains.get(selectedId);
   if (!v) return;
   dHead.textContent = v.hc;
@@ -630,11 +634,28 @@ function renderDetailHeader() {
   const src = { TD: 'signalling', TRUST: 'train reporting', schedule: 'timetable', demo: 'simulated', eurostar: 'Eurostar’s live' }[v.src] || v.src;
   dFoot.classList.remove('tiny');
   dFoot.textContent = DEMO ? 'Demo data, not real trains' : `Last reported ${ago(v.up)} from ${src} data`;
+  const on = alerts && alerts.has(selectedId);
+  setActs([
+    !DEMO && act('alert', on ? `${ICON.bell} Alert on` : `${ICON.bell} Alert me`, on),
+    act('follow', following === selectedId ? `${ICON.follow} Following` : `${ICON.follow} Follow`, following === selectedId),
+  ]);
+}
+
+/** One button in the sheet's row of actions. */
+function act(name, html, on = false, extra = '') {
+  return `<button class="act" type="button" data-act="${name}" aria-pressed="${Boolean(on)}"${extra}>${html}</button>`;
+}
+function setActs(list) {
+  const html = list.filter(Boolean).join('');
+  if (dActs.innerHTML !== html) dActs.innerHTML = html;
+  dActs.hidden = !html;
 }
 
 async function loadCalls() {
   if (isBus(selectedId)) return loadBusCalls();
   if (isStop(selectedId)) return loadStopBoard();
+  if (isStn(selectedId)) return loadBoard();
+  if (isRoute(selectedId)) return loadRoute();
   let d = null;
   if (DEMO) d = demoDetail(selectedId, now());
   else {
@@ -673,20 +694,31 @@ async function loadCalls() {
   routeLine = L.polyline(d.path, { color: '#d4a64a', weight: 3, opacity: 0.85, dashArray: '2 7', interactive: false }).addTo(map);
 }
 
-let detailFrom = null; // the tab you were on when you opened a panel from a list
+let detailFrom = null; // the tab you were on when you opened a sheet from a list
 function select(id) {
   if (!selectedId) window.__detailDrag?.reset();
   if (!selectedId && tab !== 'map') detailFrom = tab;
   if (following && following !== id) setFollow(null);
+  if (selectedId !== id) {
+    dCalls.innerHTML = '';
+    dBoard.innerHTML = '';
+    dState.innerHTML = '';
+    dFrom.textContent = '';
+    dActs.innerHTML = '';
+    dPick.hidden = true;
+    if (routeLine) routeLine.remove();
+    routeLine = null;
+  }
+  const wasRoute = peekRoute;
+  peekRoute = isRoute(id) ? id.slice(6) : null;
+  if (peekRoute !== wasRoute) pollBuses();
   selectedId = id;
   detailEl.hidden = false;
-  if (!finderEl.hidden) setFinderOpen(false);
-  dCalls.innerHTML = '';
+  setLayersOpen(false);
   if (window.matchMedia('(max-width: 899px)').matches) {
     setFiltersOpen(false);
     setBusPanelOpen(false);
-    setHomeOpen(false);
-    if (tab !== 'map') markTab('map');
+    if (tab !== 'map') setTab('map', true);
   }
   renderDetailHeader();
   loadCalls();
@@ -694,14 +726,18 @@ function select(id) {
   detailTimer = setInterval(() => {
     renderDetailHeader();
     loadCalls();
-  }, 15000);
+  }, isStn(id) ? 30000 : 15000);
 }
 
-/** Close the train/bus/stop panel. byYou: you closed it, so go back to where you came from. */
+/** Close the sheet. byYou: you closed it, so go back to where you came from. */
 function closeDetail(byYou = false) {
   const back = byYou === true && detailFrom && window.matchMedia('(max-width: 899px)').matches ? detailFrom : null;
   detailFrom = null;
   selectedId = null;
+  if (peekRoute) {
+    peekRoute = null;
+    pollBuses();
+  }
   setFollow(null);
   detailEl.hidden = true;
   clearInterval(detailTimer);
@@ -714,7 +750,49 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeDetail();
     setBusPanelOpen(false);
+    setLayersOpen(false);
   }
+});
+
+/** Put a place on the map where the sheet won't cover it (phones: in the top part). */
+function showOnMap(la, lo, z) {
+  const zoom = Math.max(map.getZoom(), z);
+  if (!window.matchMedia('(max-width: 899px)').matches) return map.setView([la, lo], zoom);
+  const p = map.project([la, lo], zoom).add([0, map.getSize().y * 0.22]);
+  map.setView(map.unproject(p, zoom), zoom);
+}
+
+// The sheet's actions: star, alert, follow, I'm on it, destination
+dActs.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b || !selectedId) return;
+  const a = b.dataset.act;
+  if (a === 'follow') return setFollow(following ? null : selectedId);
+  if (a === 'alert') {
+    const own = alerts.list().find((x) => x.key === selectedId);
+    if (own) alerts.remove(own.id);
+    else alerts.watch(selectedId, boardCrs.get(selectedId) || null);
+    return;
+  }
+  if (a === 'busstar') {
+    const o = buses.get(selectedId.slice(4));
+    if (o) toggleBusFav(o.v.r);
+    return;
+  }
+  if (a === 'ride') {
+    const o = buses.get(selectedId.slice(4));
+    if (o) logRide(o.v);
+    return;
+  }
+  if (a === 'stopstar') {
+    const id = selectedId.slice(5);
+    const d = stopBoards.get(id);
+    return toggleStopFav(id, d ? d.name : id);
+  }
+  if (a === 'routestar') return toggleBusFav(selectedId.slice(6));
+  if (a === 'stnstar') return toggleFav();
+  if (a === 'to') return openPicker();
+  if (a === 'clearto') return setTo(null);
 });
 
 // ---------- Feeding data in ----------
@@ -726,7 +804,7 @@ function replaceAll(list) {
 
 function afterUpdate() {
   updateCounts();
-  if (selectedId && !isBus(selectedId) && !isStop(selectedId)) {
+  if (selectedId && !isBus(selectedId) && !isPlace(selectedId)) {
     if (trains.has(selectedId)) renderDetailHeader();
     else dState.textContent = 'No longer being tracked';
   }
@@ -777,24 +855,15 @@ function connect() {
 }
 
 // Re-render "x seconds ago" text
-setInterval(() => selectedId && renderDetailHeader(), 5000);
+setInterval(() => selectedId && !isPlace(selectedId) && renderDetailHeader(), 5000);
 
-// ---------- Train finder: nearest station → destination → departures board ----------
-const finderEl = document.getElementById('finder');
-const fFrom = document.getElementById('fFrom');
-const fTo = document.getElementById('fTo');
-const fSuggest = document.getElementById('fSuggest');
-const fNote = document.getElementById('fNote');
-const fFavs = document.getElementById('fFavs');
-const fBoard = document.getElementById('fBoard');
-const fLocate = document.getElementById('fLocate');
-
+// ---------- Stations: the list, searching it, and a station's board ----------
 let stations = null; // [{c, n, la, lo}]
 let stationsLoading = null;
-const route = { from: store.get('fFrom', null), to: store.get('fTo', null) }; // CRS codes
-let favs = store.get('favs', []); // [{f, t}]
-let boardTimer = null;
-let located = false;
+// Starred stations and train routes, one list: { f: from, t: to or null for the whole station }
+let favs = store.get('favs', []);
+const stn = { from: null, to: null }; // the station sheet that's open
+let toFor = store.get('toFor', {}); // the destination you last picked at each station
 
 const byCrs = (c) => stations && stations.find((s) => s.c === c);
 const short = (name) => name.replace(/^London /, '');
@@ -839,241 +908,19 @@ function metresTo(la, lo, s) {
   return Math.hypot(x, y);
 }
 
-function nearest(la, lo) {
-  let best = null;
-  let bestD = Infinity;
-  for (const s of stations) {
-    const d = metresTo(la, lo, s);
-    if (d < bestD) {
-      best = s;
-      bestD = d;
-    }
-  }
-  return best && { s: best, d: bestD };
-}
-
 function fmtDist(m) {
   return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
-function setNote(text) {
-  fNote.textContent = text || '';
-}
-
-function setStation(which, crs) {
-  route[which] = crs;
-  store.set(which === 'from' ? 'fFrom' : 'fTo', crs);
-  const s = byCrs(crs);
-  (which === 'from' ? fFrom : fTo).value = s ? s.n : '';
-  renderFavs();
-  loadBoard();
-}
-
-function locate() {
-  if (!navigator.geolocation) {
-    setNote('Location isn’t available on this device. Type your station instead.');
-    fFrom.focus();
-    return;
-  }
-  fLocate.classList.add('busy');
-  setNote('Finding your nearest station…');
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      fLocate.classList.remove('busy');
-      try {
-        await loadStations();
-      } catch {
-        setNote('Couldn’t load the station list. Check your connection and try again.');
-        return;
-      }
-      const n = nearest(pos.coords.latitude, pos.coords.longitude);
-      if (!n) return;
-      located = true;
-      setStation('from', n.s.c);
-      setNote(
-        n.d > 2500
-          ? `Nearest station is ${n.s.n}, ${fmtDist(n.d)} away. Change it if you’re going from somewhere else.`
-          : `Nearest station: ${n.s.n} (${fmtDist(n.d)})`,
-      );
-      if (!route.to) fTo.focus();
-    },
-    (err) => {
-      fLocate.classList.remove('busy');
-      setNote(
-        err.code === 1
-          ? 'Location is turned off for this site. Type your station instead.'
-          : 'Couldn’t find your location. Type your station instead.',
-      );
-      fFrom.focus();
-    },
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 },
-  );
-}
-
-// ----- Station suggestions -----
-let suggestFor = null;
-let suggestItems = [];
-let suggestIdx = -1;
-
-function showSuggest(input) {
-  const items = search(input.value);
-  suggestFor = input;
-  suggestItems = items;
-  suggestIdx = items.length ? 0 : -1;
-  if (!items.length) {
-    hideSuggest();
-    return;
-  }
-  const field = input.closest('.f-field');
-  fSuggest.style.top = `${field.offsetTop + field.offsetHeight + 4}px`;
-  fSuggest.innerHTML = items
-    .map(
-      (s, i) =>
-        `<li role="option" id="sug-${i}" aria-selected="${i === suggestIdx}" data-crs="${s.c}"><span>${esc(s.n)}</span><span class="crs">${s.c}</span></li>`,
-    )
-    .join('');
-  fSuggest.hidden = false;
-  input.setAttribute('aria-activedescendant', 'sug-0');
-  // Make the panel tall enough to show the whole list rather than cutting it off
-  const finderEl = document.getElementById('finder');
-  finderEl.style.minHeight = '';
-  const need = fSuggest.parentElement.offsetTop + fSuggest.offsetTop + fSuggest.offsetHeight + 16;
-  if (need > finderEl.clientHeight) finderEl.style.minHeight = `${need}px`;
-}
-
-function hideSuggest() {
-  fSuggest.hidden = true;
-  suggestFor = null;
-  document.getElementById('finder').style.minHeight = '';
-}
-
-function pickSuggestion(i) {
-  const s = suggestItems[i];
-  if (!s || !suggestFor) return;
-  const which = suggestFor === fFrom ? 'from' : 'to';
-  hideSuggest();
-  setStation(which, s.c);
-  if (which === 'from') setNote('');
-  if (which === 'from' && !route.to) fTo.focus();
-  else (which === 'from' ? fFrom : fTo).blur();
-}
-
-for (const input of [fFrom, fTo]) {
-  input.addEventListener('input', async () => {
-    try {
-      await loadStations();
-    } catch {
-      setNote('Couldn’t load the station list. Check your connection and try again.');
-      return;
-    }
-    showSuggest(input);
-  });
-  input.addEventListener('focus', () => input.select());
-  input.addEventListener('keydown', (e) => {
-    if (fSuggest.hidden) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      suggestIdx = (suggestIdx + (e.key === 'ArrowDown' ? 1 : -1) + suggestItems.length) % suggestItems.length;
-      [...fSuggest.children].forEach((li, i) => li.setAttribute('aria-selected', i === suggestIdx));
-      input.setAttribute('aria-activedescendant', `sug-${suggestIdx}`);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      pickSuggestion(Math.max(0, suggestIdx));
-    } else if (e.key === 'Escape') {
-      e.stopPropagation();
-      hideSuggest();
-    }
-  });
-  input.addEventListener('blur', () =>
-    setTimeout(() => {
-      if (document.activeElement !== fFrom && document.activeElement !== fTo) {
-        hideSuggest();
-        // Destination cleared: show every train leaving instead
-        if (!fTo.value.trim() && route.to) setStation('to', null);
-        // Put back the chosen station's name if the text was left half-typed
-        fFrom.value = byCrs(route.from)?.n || '';
-        fTo.value = byCrs(route.to)?.n || '';
-      }
-    }, 150),
-  );
-}
-fSuggest.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the input
-fSuggest.addEventListener('click', (e) => {
-  const li = e.target.closest('li');
-  if (li) pickSuggestion([...fSuggest.children].indexOf(li));
-});
-
-fLocate.onclick = locate;
-document.getElementById('fSwap').onclick = () => {
-  const { from, to } = route;
-  route.from = to;
-  route.to = from;
-  store.set('fFrom', route.from);
-  store.set('fTo', route.to);
-  fFrom.value = byCrs(route.from)?.n || '';
-  fTo.value = byCrs(route.to)?.n || '';
-  setNote('');
-  renderFavs();
-  loadBoard();
-};
-
-// ----- Favourite routes (kept on this device) -----
-const isFav = () => favs.some((f) => f.f === route.from && f.t === route.to);
-
-function renderFavs() {
-  if (!stations) return;
-  fFavs.innerHTML = favs
-    .map((f, i) => {
-      const a = byCrs(f.f);
-      const b = byCrs(f.t);
-      if (!a || !b) return '';
-      const on = f.f === route.from && f.t === route.to;
-      return `<span class="fav ${on ? 'on' : ''}"><button data-i="${i}" aria-pressed="${on}">${esc(short(a.n))} → ${esc(short(b.n))}</button><button class="rm" data-rm="${i}" aria-label="Remove saved route ${esc(short(a.n))} to ${esc(short(b.n))}">×</button></span>`;
-    })
-    .join('');
-}
-fFavs.addEventListener('click', (e) => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  if (b.dataset.rm != null) {
-    favs.splice(Number(b.dataset.rm), 1);
-    store.set('favs', favs);
-    renderFavs();
-    renderBoardHead();
-    return;
-  }
-  const f = favs[Number(b.dataset.i)];
-  if (!f) return;
-  route.from = f.f;
-  route.to = f.t;
-  store.set('fFrom', f.f);
-  store.set('fTo', f.t);
-  fFrom.value = byCrs(f.f)?.n || '';
-  fTo.value = byCrs(f.t)?.n || '';
-  setNote('');
-  renderFavs();
-  loadBoard();
-});
+const isFav = (f = stn.from, t = stn.to) => favs.some((x) => x.f === f && (x.t || null) === (t || null));
 
 function toggleFav() {
-  if (!route.from || !route.to) return;
-  if (isFav()) favs = favs.filter((f) => !(f.f === route.from && f.t === route.to));
-  else favs = [{ f: route.from, t: route.to }, ...favs].slice(0, 8);
+  if (!stn.from) return;
+  if (isFav()) favs = favs.filter((x) => !(x.f === stn.from && (x.t || null) === (stn.to || null)));
+  else favs = [{ f: stn.from, t: stn.to || null }, ...favs].slice(0, 16);
   store.set('favs', favs);
-  renderFavs();
-  renderBoardHead();
-}
-
-// ----- The board -----
-let lastBoard = null;
-
-function renderBoardHead() {
-  const btn = fBoard.querySelector('.b-save');
-  if (btn) {
-    const on = isFav();
-    btn.setAttribute('aria-pressed', on);
-    btn.innerHTML = on ? `${ICON.starOn} Saved` : `${ICON.star} Save route`;
-  }
+  renderStationHeader();
+  home.render();
 }
 
 function expText(r) {
@@ -1083,11 +930,27 @@ function expText(r) {
   return ['On time', ''];
 }
 
+let lastBoard = null;
+
+function renderStationHeader() {
+  const s = byCrs(stn.from);
+  const to = stn.to && byCrs(stn.to);
+  dHead.textContent = 'Station';
+  dOp.textContent = stn.from || '';
+  dRoute.textContent = s ? s.n : stn.from || '';
+  dFrom.textContent = to ? `Direct trains to ${to.n}` : 'Every train leaving';
+  dState.innerHTML = '';
+  const on = isFav();
+  setActs([
+    act('stnstar', on ? `${ICON.starOn} Starred` : `${ICON.star} Star`, on, ` title="${to ? 'Star this route' : 'Star this station'}"`),
+    act('to', `${ICON.dest} ${to ? `To ${esc(short(to.n))}` : 'Where to?'}`, Boolean(to)),
+    to && `<button class="act act-x" type="button" data-act="clearto" aria-label="Any destination">×</button>`,
+  ]);
+  dFoot.classList.add('tiny');
+}
+
 function renderBoard(d) {
   lastBoard = d;
-  const head = d.to
-    ? `<div class="b-head"><div class="b-title">${esc(short(d.to.name))}<small>Direct trains from ${esc(d.from.name)} · ${fresh(Date.now())}</small></div><button class="b-save" type="button"></button></div>`
-    : `<div class="b-head"><div class="b-title">Departures<small>Every train from ${esc(d.from.name)} · ${fresh(Date.now())}. Add a destination to narrow it down.</small></div></div>`;
   let body;
   if (!d.rows.length) {
     body = d.to
@@ -1099,11 +962,11 @@ function renderBoard(d) {
         const [exp, cls] = expText(r);
         const arr = r.cancelled ? '' : r.etaTime || r.sta;
         const bits = [
-          arr ? `Arrives ${arr}` : '',
-          r.mins != null && !r.cancelled ? `${r.mins} min` : '',
+          d.to && arr ? `Arrives ${arr}` : '',
+          d.to && r.mins != null && !r.cancelled ? `${r.mins} min` : '',
           r.stops != null ? (r.stops === 0 ? 'non-stop' : `${r.stops} stop${r.stops === 1 ? '' : 's'}`) : '',
-          r.op ? esc(r.op) : '',
           r.coaches ? `${r.coaches} coaches` : '',
+          r.op ? esc(r.op) : '',
         ].filter(Boolean);
         const plat = r.plat
           ? `<span class="b-plat ${r.platLive ? '' : 'planned'}"><b>${esc(r.plat)}</b><small>${r.platLive ? 'Platform' : 'Planned'}</small></span>`
@@ -1116,52 +979,35 @@ function renderBoard(d) {
       })
       .join('');
   }
-  const foot =
-    d.source === 'national-rail'
-      ? '<p class="b-foot">Live times and platforms from National Rail. Tap a train to see it on the map.</p>'
-      : '<p class="b-foot">Timetabled platforms shown until the station announces them. Tap a train to see it on the map.</p>';
-  fBoard.innerHTML = head + body + foot;
-  const save = fBoard.querySelector('.b-save');
-  if (save) save.onclick = toggleFav;
-  renderBoardHead();
+  dBoard.innerHTML = body;
+  dFoot.innerHTML = `${d.source === 'national-rail' ? 'Live times and platforms from National Rail' : 'Timetabled platforms until the station announces them'} · ${fresh(Date.now())}`;
 }
 
 async function loadBoard() {
-  clearInterval(boardTimer);
-  if (!route.from) {
-    fBoard.innerHTML = '';
-    return;
-  }
-  if (route.from === route.to) {
-    fBoard.innerHTML = '<p class="b-empty">Choose two different stations.</p>';
-    return;
-  }
-  const key = `${route.from}|${route.to || ''}`;
-  if (!lastBoard || `${lastBoard.from.crs}|${lastBoard.to?.crs || ''}` !== key) {
-    fBoard.innerHTML = '<p class="b-empty">Checking departures…</p>';
-  }
+  if (!stn.from) return;
+  const key = `${stn.from}|${stn.to || ''}`;
+  if (!lastBoard || `${lastBoard.from.crs}|${lastBoard.to?.crs || ''}` !== key) dBoard.innerHTML = '<p class="b-empty">Checking departures…</p>';
   try {
-    const res = await fetch(`${WORKER}/api/board?from=${route.from}&to=${route.to || ''}`);
+    const res = await fetch(`${WORKER}/api/board?from=${stn.from}&to=${stn.to || ''}`);
     const d = await res.json();
-    if (`${route.from}|${route.to || ''}` !== key) return; // changed meanwhile
-    if (d.error) fBoard.innerHTML = `<p class="b-empty">${esc(d.error)}.</p>`;
+    if (`${stn.from}|${stn.to || ''}` !== key || selectedId !== 'stn:' + stn.from) return; // changed meanwhile
+    if (d.error) dBoard.innerHTML = `<p class="b-empty">${esc(d.error)}.</p>`;
     else renderBoard(d);
+    remember(selectedId, byCrs(stn.from)?.n || stn.from, 'Station');
   } catch {
-    fBoard.innerHTML = '<p class="b-empty">Couldn’t reach the departures service. It will try again shortly.</p>';
+    dBoard.innerHTML = '<p class="b-empty">Couldn’t reach the departures service. It will try again shortly.</p>';
   }
-  boardTimer = setInterval(() => !finderEl.hidden && loadBoard(), 30000);
 }
 
-fBoard.addEventListener('click', (e) => {
+dBoard.addEventListener('click', (e) => {
   const row = e.target.closest('.b-row');
   if (!row) return;
   const id = row.dataset.id;
-  const v = id && trains.get(id);
-  if (!v) {
-    setNote('That train isn’t on the map yet. It appears shortly before it’s due to leave.');
+  if (!id || !trains.get(id)) {
+    row.querySelector('.b-sub')?.insertAdjacentHTML('beforeend', ' · not on the map yet');
     return;
   }
-  showTrain(id, route.from);
+  showTrain(id, stn.from);
 });
 
 /** Go to the map and show a train, e.g. from a departures board. */
@@ -1169,74 +1015,82 @@ function showTrain(id, crs = null) {
   const v = trains.get(id);
   if (crs) boardCrs.set(id, crs);
   if (!v) return false;
-  const from = tab;
-  setTab('map');
-  if (from !== 'map') detailFrom = from;
   select(id);
   const p = position(v, now());
-  if (p) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14));
+  if (p) showOnMap(p.lat, p.lng, 14);
   return true;
 }
 
-/** Open or close Departures. preset: { from, to } to show a particular board (to may be null). */
-async function setFinderOpen(open, preset = null) {
-  finderEl.hidden = !open;
-  if (open) markTab('departures');
-  else if (tab === 'departures') markTab('map');
-  if (!open) {
-    clearInterval(boardTimer);
-    hideSuggest();
-    return;
+/** Pick where you're going from this station: your usual places, or search. */
+function openPicker() {
+  dPick.hidden = !dPick.hidden;
+  if (dPick.hidden) return;
+  const c = store.get('commute', null);
+  const quick = [
+    ...new Set([
+      c && (c.home === stn.from ? c.work : c.work === stn.from ? c.home : null),
+      ...favs.filter((x) => x.f === stn.from && x.t).map((x) => x.t),
+      ...favs.filter((x) => x.t === stn.from).map((x) => x.f),
+    ]),
+  ].filter((x) => x && x !== stn.from && byCrs(x));
+  dPick.innerHTML = `<input class="sp-input" id="pickInput" type="text" autocomplete="off" spellcheck="false" placeholder="Where are you going?" aria-label="Destination station" />
+    ${quick.length ? `<div class="pick-quick">${quick.map((x) => `<button class="act" type="button" data-pick="${x}">${esc(short(byCrs(x).n))}</button>`).join('')}</div>` : ''}
+    <ul class="sp-list" id="pickList"></ul>`;
+  setTimeout(() => document.getElementById('pickInput')?.focus(), 30);
+  // Give the list room on a phone
+  if (window.matchMedia('(max-width: 899px)').matches) detailEl.style.height = `${fullH()}px`;
+}
+dPick.addEventListener('input', (e) => {
+  if (e.target.id !== 'pickInput') return;
+  document.getElementById('pickList').innerHTML = search(e.target.value)
+    .filter((x) => x.c !== stn.from)
+    .slice(0, 6)
+    .map((x) => `<li><button type="button" data-pick="${x.c}">${esc(x.n)} <small>${x.c}</small></button></li>`)
+    .join('');
+});
+dPick.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pick]');
+  if (b) setTo(b.dataset.pick);
+});
+dPick.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') dPick.querySelector('#pickList [data-pick]')?.click();
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    dPick.hidden = true;
   }
-  closeDetail();
-  setHomeOpen(false);
-  setBusPanelOpen(false);
-  if (window.matchMedia('(max-width: 899px)').matches) setFiltersOpen(false);
-  else if (filtersEl.classList.contains('open')) setFiltersOpen(false);
-  try {
-    await loadStations();
-  } catch {
-    setNote('Couldn’t load the station list. Check your connection and try again.');
-    return;
-  }
-  if (preset) {
-    route.from = preset.from;
-    route.to = preset.to || null;
-    store.set('fFrom', route.from);
-    store.set('fTo', route.to);
-    setNote('');
-  }
-  fFrom.value = byCrs(route.from)?.n || '';
-  fTo.value = byCrs(route.to)?.n || '';
-  renderFavs();
-  // Work out where you are each time the finder opens (once per visit)
-  if (!located && !preset) locate();
+});
+
+function setTo(crs) {
+  stn.to = crs || null;
+  toFor = { ...toFor, [stn.from]: stn.to };
+  store.set('toFor', toFor);
+  dPick.hidden = true;
+  lastBoard = null;
+  renderStationHeader();
   loadBoard();
 }
-document.getElementById('finderClose').onclick = () => setTab('map');
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !finderEl.hidden && fSuggest.hidden) setFinderOpen(false);
-});
 
 // ---------- Stations on the map (tap one for its departures) ----------
 let drawnStations = [];
 function drawStations(size, z) {
   drawnStations = [];
-  if (z < 12 || !stations) return;
+  if ((z < 12 && !isStn(selectedId)) || !stations) return;
   const b = map.getBounds().pad(0.05);
   const big = z >= 14;
   ctx.font = '600 11px "Work Sans", system-ui, sans-serif';
   for (const st of stations) {
     if (st.la < b.getSouth() || st.la > b.getNorth() || st.lo < b.getWest() || st.lo > b.getEast()) continue;
+    if (z < 12 && selectedId !== 'stn:' + st.c) continue; // zoomed out: just the one you opened
     const pt = toScreen(st.la, st.lo);
     const entry = [pt.x, pt.y, st.c, null];
     drawnStations.push(entry);
-    // A white station tick with a dark ring, like a railway map
+    // A white station tick with a dark ring, like a railway map (gilt when it's open)
+    const sel = selectedId === 'stn:' + st.c;
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, big ? 4.5 : 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = '#efeadb';
+    ctx.arc(pt.x, pt.y, sel ? 7 : big ? 4.5 : 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = sel ? '#d4a64a' : '#efeadb';
     ctx.fill();
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = sel ? 2.5 : 1.6;
     ctx.strokeStyle = '#162720';
     ctx.stroke();
     if (big) {
@@ -1255,22 +1109,30 @@ function drawStations(size, z) {
 // The station list is also needed for the map's station ticks
 loadStations().catch(() => {});
 
-/** Departures for a station (to may be null for every train). */
-function openBoard(from, to) {
-  setTab('departures', { from, to });
+/**
+ * Open a station's board in the sheet. to: a destination (null for every train; left out,
+ * the one you last picked there). fly: move the map to the station.
+ */
+function openBoard(from, to, fly = true) {
+  stn.from = from;
+  stn.to = to === undefined ? toFor[from] || null : to;
+  lastBoard = null;
+  if (selectedId === 'stn:' + from) {
+    renderStationHeader();
+    loadBoard();
+  } else select('stn:' + from);
+  const s = byCrs(from);
+  if (fly && s) showOnMap(s.la, s.lo, 14);
 }
 
 // ---------- Follow a train or bus ----------
 let following = null;
 let lastPan = 0;
-const followBtn = document.getElementById('dFollow');
 function setFollow(id) {
+  if (following === id) return;
   following = id;
-  followBtn.setAttribute('aria-pressed', Boolean(id));
-  followBtn.innerHTML = id ? `${ICON.follow} Following` : `${ICON.follow} Follow`;
+  if (selectedId && !isPlace(selectedId)) renderDetailHeader();
 }
-followBtn.onclick = () => setFollow(following ? null : selectedId);
-setFollow(null); // shows the icon
 map.on('dragstart', () => following && setFollow(null)); // you moved the map yourself
 function keepInView(lat, lng, pt, size) {
   // Recentre gently when it drifts out of the middle of the screen
@@ -1289,40 +1151,6 @@ function setBarHeight() {
 }
 setBarHeight();
 if (window.ResizeObserver) new ResizeObserver(setBarHeight).observe(barEl);
-// Home-screen app on iPhone: iOS can leave the page's bottom edge short of the screen's,
-// which left a strip under the nav bar. Measure it and let the nav bar reach the real bottom.
-// Tap the title five times to show the layout measurements (for checking on a phone)
-let debugTaps = 0;
-let debugTimer = null;
-document.querySelector('.bar h1').addEventListener('click', () => {
-  debugTaps++;
-  clearTimeout(debugTimer);
-  debugTimer = setTimeout(() => debugTaps < 5 && (debugTaps = 0), 2000);
-  if (debugTaps === 5) setBottomGap();
-});
-function setBottomGap() {
-  const standaloneApp = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  const portrait = window.innerHeight > window.innerWidth;
-  let gap = 0;
-  // (No longer used to move the nav bar: the cause, a see-through status bar, is gone.
-  // Still measured for the readout below.)
-  const strip = standaloneApp && portrait ? Math.round(window.screen.height - window.innerHeight) : 0;
-  void strip;
-  document.documentElement.style.setProperty('--gap', `${gap}px`);
-  document.documentElement.classList.toggle('has-gap', gap > 0);
-  // ?debug shows the measurements, to check the layout on a phone
-  if (params.has('debug') || debugTaps >= 5) {
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:fixed;height:env(safe-area-inset-bottom,0px);width:1px;visibility:hidden';
-    document.body.appendChild(probe);
-    const safeB = Math.round(probe.getBoundingClientRect().height);
-    probe.remove();
-    countEl.textContent = `screen ${window.screen.height} · inner ${window.innerHeight} · vv ${Math.round(window.visualViewport?.height || 0)} · app ${standaloneApp} · safe ${safeB}`;
-  }
-}
-setBottomGap();
-window.addEventListener('resize', setBottomGap);
-window.addEventListener('orientationchange', () => setTimeout(setBottomGap, 300));
 window.addEventListener('resize', setBarHeight);
 function markTab(name) {
   tab = name;
@@ -1336,29 +1164,23 @@ const alerts = createAlerts({
   DEMO,
   store,
   esc,
-  setTab: (t) => setTab(t),
+  // Alerts that can't be set explain why on the Commute & alerts panel
+  setTab: () => setSettingsOpen(true),
   showTrain: (id) => showTrain(id),
   onChange() {
-    setTimeout(renderSaved, 0);
-    const n = alerts ? alerts.list().length : 0;
-    document.getElementById('alertCount').textContent = n ? n : '';
-    if (selectedId) renderDetailHeader();
+    if (selectedId && !isPlace(selectedId)) renderDetailHeader();
     home.render();
   },
 });
-document.getElementById('dAlert').onclick = () => {
-  if (!selectedId || isBus(selectedId)) return;
-  const own = alerts.list().find((a) => a.key === selectedId);
-  if (own) alerts.remove(own.id);
-  else alerts.watch(selectedId, boardCrs.get(selectedId) || null);
-};
-document.getElementById('alertsClose').onclick = () => setTab('map');
-function setAlertsOpen(open) {
-  if (alerts.isOpen() === open) return;
+document.getElementById('alertsClose').onclick = () => setSettingsOpen(false);
+/** Commute & alerts: your two stations, weekday alerts, and the trains you're watching. */
+function setSettingsOpen(open) {
+  if (open) {
+    setLayersOpen(false);
+    closeDetail();
+  }
   alerts.open(open);
-  if (open) setTimeout(renderSaved, 0);
-  if (open) markTab('alerts');
-  else if (tab === 'alerts') markTab('map');
+  if (open) renderSaved();
 }
 
 const home = createHome({
@@ -1375,126 +1197,115 @@ const home = createHome({
   now,
   byCrs,
   loadStations,
+  stations: () => stations,
   expText,
   favs: () => favs,
+  stopFavs: () => stopFavs,
+  busFavs: () => busFavs,
+  routeName: (id) => routeName(id),
+  busBadge: (n) => busBadge(n),
+  fetchStop: (id) => fetchStop(id),
+  stopBoard: (id) => stopBoards.get(id),
   setTab: (t) => setTab(t),
   openBoard,
+  openStop: (id, la, lo) => openStop(id, la, lo),
+  openRoute: (id) => openRoute(id),
   showTrain,
+  setAuto: (on) => setAuto(on),
+  startMe: () => {
+    store.set('locDenied', false);
+    startMe(false);
+  },
 });
-home.addSection(() => {
-  const list = alerts.list();
-  if (!list.length) return '';
-  return {
-    id: 'alerts',
-    title: 'Your alerts',
-    hint: `${list.length}`,
-    html: `<ul class="al-list">${list.map((x) => `<li><button class="al-go" type="button" data-id="${esc(x.key)}">${esc(x.label)}</button></li>`).join('')}</ul>`,
-  };
-});
-document.getElementById('alertCount').textContent = alerts.list().length || '';
-function setHomeOpen(open) {
-  if (home.isOpen() === open) return;
-  home.open(open);
-  if (open) window.dispatchEvent(new Event('choo:home-open'));
-  if (open) markTab('home');
-  else if (tab === 'home') markTab('map');
-}
-document.getElementById('homeClose').onclick = () => setTab('map');
 
-function setTab(name, preset = null) {
+/**
+ * The three tabs. Now and Search are pages of their own; Map shows the map, with a sheet
+ * for whatever you've opened. keepSheet: going to the map to show a sheet.
+ */
+function setTab(name, keepSheet = false) {
+  if (!['home', 'map', 'search'].includes(name)) name = 'map';
   setDisruptOpen(false);
-  document.getElementById('searchPanel').hidden = true;
-  if (name !== 'home') setHomeOpen(false);
-  if (name !== 'alerts') setAlertsOpen(false);
-  if (name !== 'departures' && !finderEl.hidden) setFinderOpen(false);
-  if (name !== 'buses') setBusPanelOpen(false);
-  if (name === 'home' || name === 'buses' || name === 'alerts') setFiltersOpen(false);
-  if (name !== 'map' && window.matchMedia('(max-width: 899px)').matches) closeDetail();
+  setLayersOpen(false);
+  alerts.open(false);
+  setFiltersOpen(false);
+  setBusPanelOpen(false);
+  if (name !== 'map' && !keepSheet && window.matchMedia('(max-width: 899px)').matches) closeDetail();
   markTab(name);
-  if (name === 'home') setHomeOpen(true);
-  if (name === 'departures') setFinderOpen(true, preset);
-  if (name === 'buses') setBusPanelOpen(true);
-  if (name === 'alerts') setAlertsOpen(true);
+  home.open(name === 'home');
+  setSearchOpen(name === 'search');
+  if (name === 'map') setTimeout(refit, 0);
 }
 for (const b of document.querySelectorAll('.tabbar [data-tab]')) {
   b.addEventListener('click', () => {
-    // Opening the map: go to where you are
-    if (b.dataset.tab === 'map' && tab !== 'map') setTimeout(goToMe, 0);
-    // Tapping Departures again while it's open keeps it; tapping Map closes everything
+    // Opening the map: go to where you are (unless there's a sheet open to look at)
+    if (b.dataset.tab === 'map' && tab !== 'map' && !selectedId) setTimeout(goToMe, 0);
+    if (b.dataset.tab === tab && tab === 'map') closeDetail();
+    detailFrom = null;
     setTab(b.dataset.tab);
   });
 }
 loadDisruptions();
 setInterval(loadDisruptions, 120000);
 
-// ---------- Map layers: trains on/off, buses Off · Mine · All ----------
-const busMode = () => (!showBuses ? 'off' : busesOn ? 'all' : 'mine');
-function showLayerState() {
-  document.getElementById('layerTrains').setAttribute('aria-checked', showTrains);
-  for (const b of document.querySelectorAll('[data-busmode]')) b.setAttribute('aria-pressed', b.dataset.busmode === busMode());
-  document.getElementById('busModeHint').textContent = {
-    off: 'No buses on the map.',
-    mine: 'Your saved routes and the buses you’ve been on, at any zoom.',
-    all: 'Every bus in view once you zoom in, plus your saved routes.',
-  }[busMode()];
-  updateZoomHint();
-}
+// ---------- Map layers: trains and buses on/off, and the More sheet ----------
 function applyLayers() {
   store.set('showTrains', showTrains);
   store.set('showBuses', showBuses);
   store.set('busesOn', busesOn);
-  showLayerState();
+  document.getElementById('busAll').setAttribute('aria-checked', busesOn);
+  updateZoomHint();
   updateCounts();
   busShapes[showBuses ? 'addTo' : 'remove'](map);
 }
-// "All" only shows every bus once zoomed in: say so, rather than quietly showing nothing
+// Every bus only shows once zoomed in: say so, rather than quietly showing nothing
 function updateZoomHint() {
-  document.getElementById('zoomHint').hidden = !(tab === 'map' && busMode() === 'all' && map.getZoom() < BUS_ZOOM && !document.body.classList.contains('replaying'));
+  document.getElementById('zoomHint').hidden = !(tab === 'map' && showBuses && busesOn && map.getZoom() < BUS_ZOOM && !selectedId && !document.body.classList.contains('replaying'));
 }
 document.getElementById('zoomHint').onclick = () => map.setZoom(BUS_ZOOM);
 map.on('zoomend', updateZoomHint);
-showLayerState();
 setTimeout(() => !showBuses && busShapes.remove(), 0); // after the bus layer is set up
 document.getElementById('qtTrains').onclick = () => {
   showTrains = !showTrains;
   applyLayers();
 };
 document.getElementById('qtBuses').onclick = () => {
-  // Off, or back to whichever of Mine / All you had
-  if (showBuses) {
-    store.set('lastBusMode', busesOn ? 'all' : 'mine');
-    showBuses = false;
-  } else {
-    showBuses = true;
-    busesOn = store.get('lastBusMode', 'mine') === 'all';
-  }
+  showBuses = !showBuses;
+  applyLayers();
+  pollBuses();
+  loadMapStops();
+};
+document.getElementById('busAll').onclick = () => {
+  busesOn = !busesOn;
+  if (busesOn) showBuses = true;
   applyLayers();
   pollBuses();
 };
-document.getElementById('layerTrains').onclick = () => {
-  showTrains = !showTrains;
-  applyLayers();
-};
-for (const b of document.querySelectorAll('[data-busmode]')) {
-  b.onclick = () => {
-    showBuses = b.dataset.busmode !== 'off';
-    busesOn = b.dataset.busmode === 'all';
-    applyLayers();
-    pollBuses();
-  };
-}
-// The Layers sheet
+// The More sheet
 const layersEl = document.getElementById('layers');
 function setLayersOpen(open) {
+  if (layersEl.hidden === !open) return;
   layersEl.hidden = !open;
-  document.getElementById('layersBtn').setAttribute('aria-expanded', open);
+  document.getElementById('moreBtn').setAttribute('aria-expanded', open);
   if (open) {
     setFiltersOpen(false);
+    setBusPanelOpen(false);
     closeDetail();
+    const n = disrupt.lines.length;
+    document.getElementById('mDisruptSum').textContent = n ? `${n} ${n === 1 ? 'line' : 'lines'}` : 'Good service';
+    document.getElementById('mRides').textContent = rides.length ? `${rides.length} ${rides.length === 1 ? 'ride' : 'rides'}` : '';
   }
 }
-document.getElementById('layersBtn').onclick = () => setLayersOpen(layersEl.hidden);
+document.getElementById('moreBtn').onclick = () => setLayersOpen(layersEl.hidden);
 document.getElementById('layersClose').onclick = () => setLayersOpen(false);
+document.getElementById('mDisrupt').onclick = () => {
+  setLayersOpen(false);
+  setDisruptOpen(true);
+};
+document.getElementById('mMyBuses').onclick = () => {
+  setLayersOpen(false);
+  setBusPanelOpen(true);
+};
+document.getElementById('mSettings').onclick = () => setSettingsOpen(true);
 
 // A notification was tapped while the app was closed: show that train once it's on the map
 const wantTrain = params.get('train');
@@ -1504,15 +1315,6 @@ if (wantTrain) {
     if (showTrain(wantTrain) || Date.now() - t0 > 20000) clearInterval(iv);
   }, 500);
 }
-
-// Open on Home when there's a commute to show, otherwise the map
-// Start where you left off (Home if you've a commute and no last tab yet)
-const startTab = store.get('lastTab', null);
-if (wantTrain) markTab('map');
-else if (params.has('demo')) markTab('map');
-else if (startTab && startTab !== 'map') setTab(startTab);
-else if (!startTab && favs.length) setTab('home');
-else markTab('map');
 
 // ---------- Disruption ----------
 /** Escape text, then turn web addresses in it (https://…, www.…, tfl.gov.uk/…) into links. */
@@ -1643,7 +1445,10 @@ function setReplay(on) {
   setStatus('stale', 'Replay');
   fetchReplay();
 }
-replayBtn.onclick = () => setReplay(!replay);
+replayBtn.onclick = () => {
+  setLayersOpen(false);
+  setReplay(!replay);
+};
 document.getElementById('rpLive').onclick = () => setReplay(false);
 rpSlider.addEventListener('input', () => {
   if (!replay) return;
@@ -1686,7 +1491,6 @@ let busRoutes = null; // [{ id, n, e: [from, to] }]
 let busMeta = { ready: false, configured: true, pending: 0 };
 let busShapes = L.layerGroup().addTo(map);
 let busTimer = null;
-const busStatus = document.getElementById('busNote');
 
 map.attributionControl.addAttribution('Buses: Powered by TfL Open Data');
 
@@ -1697,7 +1501,8 @@ function busPos(o, t) {
 
 function busQuery() {
   const q = new URLSearchParams();
-  if (busFavs.length) q.set('r', busFavs.join(','));
+  const r = [...new Set([...busFavs, ...(peekRoute ? [peekRoute] : [])])];
+  if (r.length) q.set('r', r.join(','));
   // Buses you've ridden, wherever they are today (most recent first)
   if (store.get('showRidden', true)) {
     const regs = [...new Set(store.get('rides', []).map((x) => x.reg))].slice(0, 60);
@@ -1720,7 +1525,6 @@ async function pollBuses() {
       buses.clear();
       renderCount();
     }
-    renderBusNote();
     return;
   }
   let d;
@@ -1745,8 +1549,8 @@ async function pollBuses() {
   }
   for (const id of buses.keys()) if (!seen.has(id)) buses.delete(id);
   renderCount();
-  renderBusNote();
   if (isBus(selectedId)) renderBusHeader();
+  if (isRoute(selectedId)) loadRoute();
 }
 let busMoveTimer = null;
 map.on('moveend', () => {
@@ -1859,21 +1663,21 @@ function renderBusHeader() {
   const o = buses.get(selectedId.slice(4));
   if (!o) {
     dState.textContent = 'No longer being tracked';
+    setActs([]);
     return;
   }
   const v = o.v;
-  dHead.textContent = v.n;
   const facts = busFactsCache.get(v.id);
   const deckName = facts?.deck || (v.k === 'D' ? 'Double decker' : v.k === 'S' ? 'Single decker' : 'London bus');
-  dOp.innerHTML = `${busIcon(facts?.deck || v.k) || `<span class="sw" style="--c:${BUS_RED}"></span>`}${esc(deckName)}`;
+  dHead.innerHTML = busBadge(v.n);
+  dOp.innerHTML = `${busIcon(facts?.deck || v.k)}${esc(deckName)}${facts?.power ? ` · ${esc(facts.power)}` : ''}`;
   dRoute.textContent = v.d ? `To ${v.d}` : `Route ${v.n}`;
-  const r = busRoutes && busRoutes.find((x) => x.id === v.r);
   const mine = ridesOn(v.id);
-  dFrom.innerHTML = `${esc(r ? `Route ${v.n} · ${r.e[0]} – ${r.e[1]}` : `Route ${v.n}`)} · <span class="reg">${esc(v.id)}</span>${
-    mine.length ? `<span class="been">You’ve been on this bus ${mine.length === 1 ? 'once' : `${mine.length} times`}</span>` : ''
+  dFrom.innerHTML = `<span class="reg">${esc(v.id)}</span>${
+    mine.length ? ` · You’ve been on this bus ${mine.length === 1 ? 'once' : mine.length === 2 ? 'twice' : `${mine.length} times`}` : ''
   }${
     facts
-      ? `<span class="facts">${[facts.model, facts.power, facts.length ? `${facts.length} m` : '', facts.fleetNo ? `${facts.operator} ${facts.fleetNo}` : facts.operator, facts.year ? `from ${facts.year}` : '']
+      ? `<span class="facts">${[facts.model, facts.length ? `${facts.length} m` : '', facts.fleetNo ? `${facts.operator} ${facts.fleetNo}` : facts.operator, facts.year ? `from ${facts.year}` : '']
           .filter(Boolean)
           .map(esc)
           .join(' · ')}</span>`
@@ -1881,13 +1685,19 @@ function renderBusHeader() {
   }`;
   const fav = busFavs.includes(v.r);
   const onNow = mine.length && Date.now() - mine[0].at < RIDE_SAME_MS;
-  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}<button class="pill star" id="busStar" aria-pressed="${fav}">${fav ? `${ICON.starOn} Saved route` : `${ICON.star} Save route`}</button><button class="pill star" id="busRide" aria-pressed="${Boolean(onNow)}">${
-    onNow ? `${ICON.check} On board (ride ${mine.length})` : `${ICON.bus} I’m on this bus`
-  }</button>`;
-  document.getElementById('busStar').onclick = () => toggleBusFav(v.r);
-  document.getElementById('busRide').onclick = () => logRide(v);
+  dState.innerHTML = `Next stop ${esc(v.nx)}${v.m <= 0 ? ', due now' : ` in ${v.m} min`}`;
+  setActs([
+    act('busstar', fav ? `${ICON.starOn} Route starred` : `${ICON.star} Star route`, fav),
+    act('follow', following === selectedId ? `${ICON.follow} Following` : `${ICON.follow} Follow`, following === selectedId),
+    act('ride', onNow ? `${ICON.check} On board` : `${ICON.bus} I’m on it`, onNow),
+  ]);
   dFoot.textContent = 'Estimated position · TfL Open Data';
   dFoot.classList.add('tiny');
+}
+
+/** A route number in a red roundel-ish badge. */
+function busBadge(n) {
+  return `<span class="bn">${esc(n)}</span>`;
 }
 
 async function loadBusCalls() {
@@ -1925,27 +1735,18 @@ async function loadBusCalls() {
   routeLine = L.polyline(d.path, { color: BUS_RED, weight: 3, opacity: 0.8, dashArray: '2 7', interactive: false }).addTo(map);
 }
 
-// ---------- Favourite routes and the Ding Ding panel ----------
+// ---------- Starred bus routes, a route's sheet, and the My buses panel ----------
 const busPanel = document.getElementById('busPanel');
-const busSearch = document.getElementById('busSearch');
-const busResults = document.getElementById('busResults');
-const busFavList = document.getElementById('busFavList');
 
 function setBusPanelOpen(open) {
-  const panel = document.getElementById('busPanel');
-  if (!panel) return;
-  if (open) setFiltersOpen(false);
-  panel.classList.toggle('open', open);
-  if (open) markTab('buses');
-  else if (tab === 'buses') markTab('map');
   if (open) {
-    loadBusRoutes().then(renderBusLists);
-    renderBusNote();
-    renderMyBuses();
-    refreshFavStops();
+    setFiltersOpen(false);
+    closeDetail();
   }
+  busPanel.classList.toggle('open', open);
+  if (open) renderMyBuses();
 }
-document.getElementById('busClose').onclick = () => setTab('map');
+document.getElementById('busClose').onclick = () => setBusPanelOpen(false);
 
 async function loadBusRoutes() {
   if (busRoutes && busRoutes.length) return busRoutes;
@@ -1965,56 +1766,64 @@ const routeEnds = (id) => {
   return e ? `${esc(e[0])} – ${esc(e[1])}` : '';
 };
 
-function busRow(id) {
-  const fav = busFavs.includes(id);
-  const count = [...buses.values()].filter((o) => o.v.r === id).length;
-  return `<li><button class="bp-star" data-route="${esc(id)}" aria-pressed="${fav}" aria-label="${fav ? 'Remove' : 'Save'} route ${esc(routeName(id))}">${fav ? ICON.starOn : ICON.star}</button>
-    <span class="bp-num">${esc(routeName(id))}</span><span class="bp-ends">${routeEnds(id)}</span>${fav && count ? `<span class="n">${count}</span>` : ''}</li>`;
-}
-
-function renderBusLists() {
-  const q = busSearch.value.trim().toLowerCase();
-  if (q && busRoutes) {
-    const hits = busRoutes
-      .filter((r) => r.n.toLowerCase().startsWith(q) || r.id === q)
-      .sort((a, b) => (a.n.toLowerCase() === q ? -1 : b.n.toLowerCase() === q ? 1 : 0) || a.n.length - b.n.length)
-      .slice(0, 12);
-    busResults.innerHTML = hits.length ? hits.map((r) => busRow(r.id)).join('') : '<li class="bp-empty">No route with that number</li>';
-  } else busResults.innerHTML = '';
-  busFavList.innerHTML = busFavs.length
-    ? busFavs.map(busRow).join('')
-    : '<li class="bp-empty">No saved routes yet. Search for a route number above, or tap a bus on the map and save its route.</li>';
-  document.getElementById('busSummary').textContent = busFavs.length ? busFavs.length : '';
-}
-busSearch.addEventListener('input', renderBusLists);
-for (const list of [busResults, busFavList]) {
-  list.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-route]');
-    if (b) toggleBusFav(b.dataset.route);
-  });
-}
-
 function toggleBusFav(id) {
   busFavs = busFavs.includes(id) ? busFavs.filter((x) => x !== id) : [...busFavs, id];
   store.set('busFavs', busFavs);
-  renderBusLists();
   drawBusShapes();
   if (isBus(selectedId)) renderBusHeader();
+  if (isRoute(selectedId)) renderRouteHeader();
   pollBuses();
+  home.render();
 }
 
-
-function renderBusNote() {
-  if (!busPanel.classList.contains('open')) return;
-  let t = '';
-  if (DEMO) t = 'Buses aren’t simulated in demo mode.';
-  else if (!busMeta.configured) t = 'Buses will appear once a TfL key is added to the server.';
-  else if (!busMeta.ready) t = 'Loading London’s bus routes. This takes a few minutes the first time.';
-  else if (busMeta.pending) t = 'Getting live positions…';
-  else if (busesOn && map.getZoom() < BUS_ZOOM) t = busFavs.length ? 'Showing your routes. Zoom in to see every bus.' : 'Zoom in to see every bus.';
-  busStatus.textContent = t;
+/** A bus route's sheet: where it goes, and the buses on it right now. */
+function openRoute(id) {
+  select('route:' + id);
+  loadBusRoutes().then(() => isRoute(selectedId) && renderRouteHeader());
 }
-map.on('zoomend', renderBusNote);
+
+function renderRouteHeader() {
+  const id = selectedId.slice(6);
+  const fav = busFavs.includes(id);
+  const on = [...buses.values()].filter((o) => o.v.r === id);
+  dHead.innerHTML = busBadge(routeName(id));
+  dOp.textContent = 'Bus route';
+  dRoute.innerHTML = routeEnds(id) || `Route ${esc(routeName(id))}`;
+  dFrom.textContent = '';
+  dState.textContent = !busMeta.ready && !DEMO ? 'Loading London’s bus routes…' : on.length ? `${on.length} ${on.length === 1 ? 'bus' : 'buses'} on the road now` : 'Looking for its buses…';
+  setActs([act('routestar', fav ? `${ICON.starOn} Starred` : `${ICON.star} Star route`, fav)]);
+  dFoot.textContent = 'Estimated positions · TfL Open Data';
+  dFoot.classList.add('tiny');
+}
+
+let routeShapeFor = null;
+async function loadRoute() {
+  const id = selectedId.slice(6);
+  renderRouteHeader();
+  const on = [...buses.values()].filter((o) => o.v.r === id).sort((a, b) => (a.v.d || '').localeCompare(b.v.d || '') || a.v.m - b.v.m);
+  dCalls.innerHTML = on.length
+    ? on
+        .map(
+          (o) => `<li class="dep" data-reg="${esc(o.v.id)}"><span class="bp-num">${busIcon(o.v.k)}${esc(o.v.n)}</span><span class="dp-main"><b>To ${esc(o.v.d || '…')}</b><small><span class="reg">${esc(o.v.id)}</span> next ${esc(o.v.nx || '')}</small></span><span class="dp-when"><b>${o.v.m <= 0 ? 'Due' : `${o.v.m} min`}</b><small>to next stop</small></span></li>`,
+        )
+        .join('')
+    : '<li class="dep-empty">No buses found on this route just now. They appear within a few seconds of being reported.</li>';
+  if (routeShapeFor === selectedId && routeLine) return;
+  routeShapeFor = selectedId;
+  remember(selectedId, `Route ${routeName(id)}`, routeEnds(id).replace(/&amp;/g, '&'));
+  try {
+    const res = await fetch(`${WORKER}/api/busshapes?r=${encodeURIComponent(id)}`);
+    const shapes = await res.json();
+    if (selectedId !== 'route:' + id) return;
+    if (routeLine) routeLine.remove();
+    routeLine = L.featureGroup(Object.values(shapes).flat().map((pts) => L.polyline(pts, { color: BUS_RED, weight: 4, opacity: 0.75, interactive: false }))).addTo(map);
+    // Opened from a list: show the whole route
+    if (detailFrom || !map.getBounds().intersects(routeLine.getBounds())) {
+      const phone = window.matchMedia('(max-width: 899px)').matches;
+      map.fitBounds(routeLine.getBounds(), { paddingTopLeft: [20, 70], paddingBottomRight: [20, phone ? Math.round(window.innerHeight * 0.5) : 20] });
+    }
+  } catch {}
+}
 
 // Favourite routes are drawn as faint lines so you can see where they go
 async function drawBusShapes() {
@@ -2029,8 +1838,7 @@ async function drawBusShapes() {
   } catch {}
 }
 
-if (busFavs.length) loadBusRoutes().then(renderBusLists);
-else renderBusLists();
+if (busFavs.length) loadBusRoutes().then(() => home.render());
 drawBusShapes();
 pollBuses();
 
@@ -2191,7 +1999,7 @@ function renderStopHeader() {
   const d = stopBoards.get(id);
   const fav = stopFavs.some((f) => f.i === id);
   dHead.textContent = 'Bus stop';
-  dOp.innerHTML = `<span class="sw" style="--c:${BUS_RED}"></span>${d ? esc(d.routes.join(', ')) : ''}`;
+  dOp.innerHTML = d ? d.routes.map(busBadge).join(' ') : '';
   dRoute.textContent = d ? d.name : 'Bus stop';
   dFrom.textContent = d && d.towards ? `Towards ${d.towards}` : '';
   // Every route due here, with all its times, at a glance
@@ -2201,9 +2009,9 @@ function renderStopHeader() {
     .sort((a, b) => a[0].localeCompare(b[0], 'en', { numeric: true }))
     .map(([rt, ms]) => `<span class="rt-sum"><span class="bp-num">${esc(rt)}</span>${ms.map(esc).join(', ')}${ms.length && ms[ms.length - 1] !== 'due' ? ' min' : ''}</span>`)
     .join('');
-  dState.innerHTML = `<button class="pill star" id="stopStar" aria-pressed="${fav}">${fav ? `${ICON.starOn} Saved stop` : `${ICON.star} Save stop`}</button>${summary ? `<span class="rt-sums">${summary}</span>` : ''}`;
-  document.getElementById('stopStar').onclick = () => toggleStopFav(id, d ? d.name : id);
-  dFoot.innerHTML = `Live times from TfL · ${d ? fresh(d.at - skew) : ''}`;
+  dState.innerHTML = summary ? `<span class="rt-sums">${summary}</span>` : '';
+  setActs([act('stopstar', fav ? `${ICON.starOn} Starred` : `${ICON.star} Star`, fav)]);
+  dFoot.innerHTML = `Live times from TfL${d && d.at ? ` · ${fresh(d.at - skew)}` : ''}`;
   dFoot.classList.add('tiny');
 }
 
@@ -2223,13 +2031,12 @@ async function loadStopBoard() {
     return;
   }
   dCalls.innerHTML = d.rows.length ? d.rows.map(depRow).join('') : '<li class="dep-empty">No buses due in the next half hour or so.</li>';
-  if (routeLine) routeLine.remove();
-  routeLine = null;
+  remember(selectedId, d.name, d.towards ? `Bus stop · towards ${d.towards}` : 'Bus stop', d.la, d.lo);
 }
 // Tap a departure: show that bus on the map, if it's there
 dCalls.addEventListener('click', (e) => {
   const li = e.target.closest('li.dep');
-  if (!li || !isStop(selectedId)) return;
+  if (!li || !(isStop(selectedId) || isRoute(selectedId))) return;
   const reg = li.dataset.reg;
   if (buses.has(reg)) {
     const o = buses.get(reg);
@@ -2239,100 +2046,17 @@ dCalls.addEventListener('click', (e) => {
 });
 
 function openStop(id, la, lo) {
-  const from = tab;
-  setTab('map');
   select('stop:' + id);
-  if (from !== 'map') detailFrom = from;
-  if (la && lo) map.setView([la, lo], Math.max(map.getZoom(), 16));
+  if (la && lo) showOnMap(la, lo, 16);
 }
 
 function toggleStopFav(id, name) {
   stopFavs = stopFavs.some((f) => f.i === id) ? stopFavs.filter((f) => f.i !== id) : [...stopFavs, { i: id, n: name }].slice(0, 12);
   store.set('busStopFavs', stopFavs);
   if (selectedId === 'stop:' + id) renderStopHeader();
-  renderStopFavs();
-  refreshFavStops();
-}
-
-/** Your saved stops, with their next few buses (Ding Ding panel and Home). */
-function favStopsHtml(per = 3) {
-  return stopFavs
-    .map((f) => {
-      const d = stopBoards.get(f.i);
-      const rows = d ? d.rows.slice(0, per) : [];
-      return `<div class="sf"><button class="sf-head" type="button" data-stop="${esc(f.i)}"><b>${esc(d ? d.name : f.n)}</b>${d && d.towards ? `<small>towards ${esc(d.towards)}</small>` : ''}</button>
-        <ul class="sf-rows">${
-          d ? (rows.length ? rows.map(depRow).join('') : '<li class="dep-empty">Nothing due soon</li>') : '<li class="dep-empty">…</li>'
-        }</ul></div>`;
-    })
-    .join('');
-}
-
-function renderStopFavs() {
-  const el = document.getElementById('busStopFavs');
-  el.innerHTML = stopFavs.length
-    ? favStopsHtml(3)
-    : '<p class="bp-intro">Zoom right in on the map to see bus stops, tap one, then Save stop. Its next buses show here and on Home.</p>';
-}
-for (const id of ['busStopFavs', 'stopsNear']) {
-  document.getElementById(id).addEventListener('click', (e) => {
-    const b = e.target.closest('[data-stop]');
-    if (b) {
-      const d = stopBoards.get(b.dataset.stop);
-      openStop(b.dataset.stop, d?.la || Number(b.dataset.la), d?.lo || Number(b.dataset.lo));
-    }
-  });
-}
-
-async function refreshFavStops() {
-  clearTimeout(stopTimer);
-  stopTimer = setTimeout(refreshFavStops, 30000);
-  const panelOpen = document.getElementById('busPanel').classList.contains('open');
-  if (DEMO || !stopFavs.length || !(panelOpen || home.isOpen()) || document.visibilityState === 'hidden') return;
-  await Promise.all(stopFavs.map((f) => fetchStop(f.i)));
-  renderStopFavs();
   home.render();
 }
 
-document.getElementById('stopsNearBtn').onclick = () => {
-  const out = document.getElementById('stopsNear');
-  if (!navigator.geolocation) return (out.innerHTML = '<li class="bp-empty">Location isn’t available on this device.</li>');
-  out.innerHTML = '<li class="bp-empty">Finding stops near you…</li>';
-  navigator.geolocation.getCurrentPosition(
-    async (p) => {
-      try {
-        const res = await fetch(`${WORKER}/api/stops?la=${p.coords.latitude.toFixed(5)}&lo=${p.coords.longitude.toFixed(5)}`);
-        const list = await res.json();
-        out.innerHTML = list.length
-          ? list
-              .map(
-                (st) => `<li><button class="sf-head" type="button" data-stop="${esc(st.i)}" data-la="${st.la}" data-lo="${st.lo}"><b>${esc(st.n)}</b><small>${st.d} m · ${esc(st.r.join(', '))}</small></button></li>`,
-              )
-              .join('')
-          : '<li class="bp-empty">No bus stops within a short walk.</li>';
-      } catch {
-        out.innerHTML = '<li class="bp-empty">Couldn’t look up stops.</li>';
-      }
-    },
-    () => (out.innerHTML = '<li class="bp-empty">Couldn’t find your location.</li>'),
-    { timeout: 8000, maximumAge: 120000 },
-  );
-};
-
-home.addSection(() => {
-  if (!stopFavs.length) return '';
-  return { id: 'stops', title: 'Your bus stops', html: favStopsHtml(2) };
-});
-document.getElementById('homeBody').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-stop]');
-  if (b) {
-    const d = stopBoards.get(b.dataset.stop);
-    openStop(b.dataset.stop, d?.la, d?.lo);
-  }
-});
-renderStopFavs();
-refreshFavStops();
-window.addEventListener('choo:home-open', () => refreshFavStops());
 loadMapStops();
 
 // ---------- Where you are ----------
@@ -2430,115 +2154,67 @@ document.addEventListener('visibilitychange', () => {
   } else if (document.visibilityState === 'visible' && me) startMe(false);
 });
 
-// Find a stop by name
-const stopSearch = document.getElementById('stopSearch');
-let stopSearchTimer = null;
-stopSearch.addEventListener('input', () => {
-  clearTimeout(stopSearchTimer);
-  const q = stopSearch.value.trim();
-  const out = document.getElementById('stopResults');
-  if (q.length < 2) return (out.innerHTML = '');
-  stopSearchTimer = setTimeout(async () => {
-    try {
-      const res = await fetch(`${WORKER}/api/stops?q=${encodeURIComponent(q)}`);
-      const list = await res.json();
-      out.innerHTML = list.length
-        ? list
-            .map((st) => `<li><button class="sf-head" type="button" data-stop="${esc(st.i)}" data-la="${st.la}" data-lo="${st.lo}"><b>${esc(st.n)}</b><small>${esc(st.r.join(', '))}</small></button></li>`)
-            .join('')
-        : '<li class="bp-empty">No stop with that name</li>';
-    } catch {}
-  }, 250);
-});
-document.getElementById('stopResults').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-stop]');
-  if (b) openStop(b.dataset.stop, Number(b.dataset.la), Number(b.dataset.lo));
-});
+// Buses you've ridden, shown wherever they are
 const showRidden = document.getElementById('showRidden');
-showRidden.checked = store.get('showRidden', true);
-showRidden.addEventListener('change', () => {
-  store.set('showRidden', showRidden.checked);
+showRidden.setAttribute('aria-checked', store.get('showRidden', true));
+showRidden.onclick = () => {
+  const on = showRidden.getAttribute('aria-checked') !== 'true';
+  showRidden.setAttribute('aria-checked', on);
+  store.set('showRidden', on);
   pollBuses();
-});
+};
 
-// ---------- Saved: everything you've saved, in one place ----------
+// ---------- Commute & alerts ----------
+async function setAuto(on) {
+  const c = store.get('commute', null);
+  const ok = await alerts.setAuto(on, c && c.home, c && c.work);
+  home.render();
+  renderSaved();
+  return ok;
+}
 function renderSaved() {
   const el = document.getElementById('savedBody');
   if (!el || document.getElementById('alertsPanel').hidden) return;
-  const rm = (kind, key, label) => `<button class="sv-rm" type="button" data-rm="${kind}" data-key="${esc(key)}" aria-label="Remove ${esc(label)}">×</button>`;
-  const section = (title, items, empty) =>
-    `<h3 class="sv-head">${title}</h3>${items.length ? `<ul class="sv-list">${items.join('')}</ul>` : `<p class="bp-intro">${empty}</p>`}`;
-  const commute = typeof commuteStations === 'function' ? commuteStations() : null;
-  const trainRoutes = favs
-    .map((f) => {
-      const a = byCrs(f.f), b = byCrs(f.t);
-      if (!a || !b) return '';
-      const label = `${short(a.n)} → ${short(b.n)}`;
-      return `<li><button class="sv-go" type="button" data-board="${f.f}|${f.t}">${esc(label)}</button>${rm('route', `${f.f}|${f.t}`, label)}</li>`;
-    })
-    .filter(Boolean);
-  const busRoutesL = busFavs.map(
-    (id) => `<li><button class="sv-go" type="button" data-busroute="${esc(id)}"><span class="bp-num">${esc(routeName(id))}</span> ${routeEnds(id)}</button>${rm('busroute', id, `route ${routeName(id)}`)}</li>`,
-  );
-  const stopsL = stopFavs.map(
-    (f) => `<li><button class="sv-go" type="button" data-stop="${esc(f.i)}">${esc(f.n)}</button>${rm('stop', f.i, f.n)}</li>`,
-  );
+  const commute = commuteStations();
   el.innerHTML = `
-    <h3 class="sv-head">Your commute</h3>
     <div class="sv-commute">${
       commute
         ? `<b>${esc(short(commute.home.n))}</b> <span>and</span> <b>${esc(short(commute.work.n))}</b><button class="h-link" type="button" data-go="setup">Change</button>`
-        : `<span>Not set yet.</span><button class="h-link" type="button" data-go="setup">Set your stations</button>`
+        : `<span>Your commute isn’t set yet.</span><button class="h-link" type="button" data-go="setup">Set your stations</button>`
     }</div>${
       commute
-        ? `<div class="ly-row sv-auto"><span><b>Watch my commute train</b><small>Weekdays, 6–10am from home and 4–8pm from work: Choo Choo picks your next good train and alerts you about it.</small></span><button class="switch" type="button" role="switch" id="autoSwitch" aria-checked="${alerts.autoOn()}" aria-label="Watch my commute train automatically"></button></div>`
+        ? `<div class="ly-row sv-auto"><span><b>Watch my commute every weekday</b><small>6–10am from home and 4–8pm from work, Choo Choo picks your next good train and tells you about its platform, delays and cancellations.</small></span><button class="switch" type="button" role="switch" id="autoSwitch" aria-checked="${alerts.autoOn()}" aria-label="Watch my commute every weekday"></button></div>`
         : ''
-    }
-    ${section('Train routes', trainRoutes, 'Save a route from a departures board with Save route.')}
-    ${section('Bus routes', busRoutesL, 'Save a bus route from Ding Ding, or from a bus on the map.')}
-    ${section('Bus stops', stopsL, 'Tap a stop on the map, or find one in Ding Ding, then Save stop.')}`;
+    }`;
 }
 document.getElementById('savedBody').addEventListener('click', async (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.id === 'autoSwitch') {
-    const c = store.get('commute', null);
     const on = b.getAttribute('aria-checked') !== 'true';
     b.setAttribute('aria-checked', on); // straight away; put back if it didn't work
-    const ok = await alerts.setAuto(on, c && c.home, c && c.work);
-    if (!ok) b.setAttribute('aria-checked', !on);
+    if (!(await setAuto(on))) b.setAttribute('aria-checked', !on);
     return;
   }
-  if (b.dataset.rm === 'route') {
-    const [f, t] = b.dataset.key.split('|');
-    favs = favs.filter((x) => !(x.f === f && x.t === t));
-    store.set('favs', favs);
-    renderFavs();
-  } else if (b.dataset.rm === 'busroute') toggleBusFav(b.dataset.key);
-  else if (b.dataset.rm === 'stop') toggleStopFav(b.dataset.key);
-  else if (b.dataset.board) {
-    const [f, t] = b.dataset.board.split('|');
-    return openBoard(f, t || null);
-  } else if (b.dataset.busroute) {
-    setTab('buses');
-    setBusSub('routes');
-  } else if (b.dataset.stop) {
-    const d = stopBoards.get(b.dataset.stop);
-    return openStop(b.dataset.stop, d?.la, d?.lo);
-  } else if (b.dataset.go === 'setup') return typeof openSetup === 'function' && openSetup();
-  renderSaved();
+  if (b.dataset.go === 'setup') openSetup();
 });
 
-// ---------- Ding Ding: Routes · Stops · My buses ----------
-function setBusSub(name) {
-  for (const b of document.querySelectorAll('.subtabs [data-sub]')) b.setAttribute('aria-pressed', b.dataset.sub === name);
-  for (const d of document.querySelectorAll('#busPanel .sub')) d.hidden = d.dataset.sub !== name;
-  store.set('busSub', name);
+// ---------- Recently opened places and routes (for Search) ----------
+let recent = store.get('recent', []); // [{ id, label, sub, la, lo }]
+function remember(id, label, sub = '', la = null, lo = null) {
+  if (!id || !label) return;
+  if (recent[0] && recent[0].id === id && recent[0].label === label) return;
+  recent = [{ id, label, sub, la, lo }, ...recent.filter((x) => x.id !== id)].slice(0, 8);
+  store.set('recent', recent);
 }
-for (const b of document.querySelectorAll('.subtabs [data-sub]')) b.onclick = () => setBusSub(b.dataset.sub);
-setBusSub(store.get('busSub', 'routes'));
+/** Open a place or route by its sheet id (stn:WAT, stop:…, route:93). */
+function openId(id, la, lo) {
+  if (isStn(id)) return openBoard(id.slice(4));
+  if (isStop(id)) return openStop(id.slice(5), la, lo);
+  if (isRoute(id)) return openRoute(id.slice(6));
+}
 
-// ---------- One search for everything ----------
+// ---------- Search: one box for everything ----------
 const searchPanel = document.getElementById('searchPanel');
 const qInput = document.getElementById('qInput');
 const qResults = document.getElementById('qResults');
@@ -2546,22 +2222,20 @@ let qTimer = null;
 let qStops = [];
 function setSearchOpen(open) {
   searchPanel.hidden = !open;
-  if (open) {
-    setLayersOpen(false);
-    qInput.value = '';
-    qResults.innerHTML = '<p class="bp-intro">Search for a station, a bus stop, a bus route (e.g. 93), a train’s headcode (e.g. 2K25) or a bus’s registration.</p>';
-    loadStations().catch(() => {});
-    loadBusRoutes();
-    setTimeout(() => qInput.focus(), 50);
-  }
+  if (!open) return;
+  loadStations()
+    .then(() => renderSearch())
+    .catch(() => {});
+  loadBusRoutes().then(() => renderSearch());
+  renderSearch();
+  // On a computer, start typing straight away (phones would pop the keyboard up over the list)
+  if (!window.matchMedia('(max-width: 899px)').matches) setTimeout(() => qInput.focus(), 50);
 }
-document.getElementById('searchOpen').onclick = () => setSearchOpen(searchPanel.hidden);
-document.getElementById('searchClose').onclick = () => setSearchOpen(false);
 qInput.addEventListener('input', () => {
   renderSearch();
   clearTimeout(qTimer);
   const q = qInput.value.trim();
-  if (q.length < 2) return;
+  if (q.length < 2) return (qStops = []);
   qTimer = setTimeout(async () => {
     try {
       const res = await fetch(`${WORKER}/api/stops?q=${encodeURIComponent(q)}`);
@@ -2572,64 +2246,94 @@ qInput.addEventListener('input', () => {
     if (qInput.value.trim() === q) renderSearch();
   }, 250);
 });
+
+const pin = (kind, text = '') => `<span class="pin ${kind}">${kind === 'rail' ? ICON.rail : kind === 'bus' ? ICON.stop : text}</span>`;
+const li = (attrs, icon, main, sub = '') => `<li><button class="sv-go" type="button" ${attrs}>${icon}<span class="sv-main">${main}</span>${sub ? `<small>${sub}</small>` : ''}</button></li>`;
+
+/** Everything you've starred, as list rows (Search, when the box is empty). */
+function starredRows() {
+  const rows = [];
+  for (const f of favs) {
+    const a = byCrs(f.f), b = f.t && byCrs(f.t);
+    if (!a) continue;
+    rows.push(b ? li(`data-board="${f.f}|${f.t}"`, pin('rail'), `${esc(short(a.n))} → ${esc(short(b.n))}`, 'Trains') : li(`data-board="${f.f}|"`, pin('rail'), esc(a.n), 'Station'));
+  }
+  for (const f of stopFavs) rows.push(li(`data-stop="${esc(f.i)}"`, pin('bus'), esc(f.n), 'Bus stop'));
+  for (const id of busFavs) rows.push(li(`data-route="${esc(id)}"`, busBadge(routeName(id)), routeEnds(id) || 'Bus route', 'Route'));
+  return rows;
+}
+
 function renderSearch() {
+  if (searchPanel.hidden) return;
   const raw = qInput.value.trim();
   const q = raw.toLowerCase();
-  if (!q) return;
+  const section = (t, items) => (items.length ? `<h3 class="sv-head">${t}</h3><ul class="sv-list">${items.join('')}</ul>` : '');
+  if (!q) {
+    const st = starredRows();
+    const rc = recent.map((x) =>
+      li(
+        `data-open="${esc(x.id)}" data-la="${x.la ?? ''}" data-lo="${x.lo ?? ''}"`,
+        isStn(x.id) ? pin('rail') : isStop(x.id) ? pin('bus') : busBadge(x.id.slice(6).toUpperCase()),
+        esc(x.label),
+        esc(x.sub || ''),
+      ),
+    );
+    qResults.innerHTML =
+      section('Starred', st) +
+      section('Recent', rc) +
+      (st.length || rc.length
+        ? ''
+        : '<p class="bp-intro">Find a station, a bus stop or a bus route. You can also look up a train by its headcode (like 2K25) or a bus by its registration.</p><p class="bp-intro">Tap <b>☆ Star</b> on anything you open to keep it here and on Now.</p>');
+    return;
+  }
   const groups = [];
   const up = raw.toUpperCase().replace(/\s/g, '');
-  // Trains by headcode
-  const tr = [...trains.values()].filter((v) => v.hc && v.hc.toUpperCase().startsWith(up)).slice(0, 5);
-  if (tr.length && /^\d[A-Z]?\d{0,2}$/i.test(up)) {
-    groups.push(['Trains', tr.map((v) => `<li><button class="sv-go" type="button" data-train="${esc(v.id)}"><b>${esc(v.hc)}</b> ${esc(v.op)} · to ${esc(v.d)}</button></li>`)]);
-  }
-  // Buses by registration
-  const bs = [...buses.values()].filter((o) => o.v.id.startsWith(up)).slice(0, 5);
-  if (bs.length && up.length >= 3) {
-    groups.push(['Buses', bs.map((o) => `<li><button class="sv-go" type="button" data-bus="${esc(o.v.id)}"><span class="reg">${esc(o.v.id)}</span> route ${esc(o.v.n)} to ${esc(o.v.d)}</button></li>`)]);
-  }
   // Stations
   const st = search(raw).slice(0, 6);
-  if (st.length) groups.push(['Stations', st.map((s2) => `<li><button class="sv-go" type="button" data-board="${s2.c}|"><b>${esc(s2.n)}</b> <small>${s2.c}</small></button></li>`)]);
+  groups.push(['Stations', st.map((s2) => li(`data-stn="${s2.c}"`, pin('rail'), esc(s2.n), s2.c))]);
+  // Bus stops
+  if (q.length >= 2) groups.push(['Bus stops', qStops.slice(0, 6).map((x) => li(`data-stop="${esc(x.i)}" data-la="${x.la}" data-lo="${x.lo}"`, pin('bus'), esc(x.n), esc(x.r.join(', '))))]);
   // Bus routes
   const br = (busRoutes || []).filter((r) => r.n.toLowerCase().startsWith(q) || r.id === q).slice(0, 5);
-  if (br.length && q.length <= 4) {
-    groups.push(['Bus routes', br.map((r) => `<li><button class="sv-go" type="button" data-route="${esc(r.id)}"><span class="bp-num">${esc(r.n)}</span> ${esc(r.e[0])} – ${esc(r.e[1])}</button></li>`)]);
+  if (q.length <= 4) groups.push(['Bus routes', br.map((r) => li(`data-route="${esc(r.id)}"`, busBadge(r.n), `${esc(r.e[0])} – ${esc(r.e[1])}`))]);
+  // Trains by headcode
+  if (/^\d[A-Z]?\d{0,2}$/i.test(up)) {
+    const tr = [...trains.values()].filter((v) => v.hc && v.hc.toUpperCase().startsWith(up)).slice(0, 5);
+    groups.push(['Trains', tr.map((v) => li(`data-train="${esc(v.id)}"`, `<span class="pin hc">${esc(v.hc)}</span>`, `To ${esc(v.d)}`, esc(opName(v.toc))))]);
   }
-  // Bus stops
-  if (qStops.length && q.length >= 2) {
-    groups.push(['Bus stops', qStops.slice(0, 6).map((x) => `<li><button class="sv-go" type="button" data-stop="${esc(x.i)}" data-la="${x.la}" data-lo="${x.lo}"><b>${esc(x.n)}</b> <small>${esc(x.r.join(', '))}</small></button></li>`)]);
+  // Buses by registration
+  if (up.length >= 3) {
+    const bs = [...buses.values()].filter((o) => o.v.id.startsWith(up)).slice(0, 5);
+    groups.push(['Buses', bs.map((o) => li(`data-bus="${esc(o.v.id)}"`, busBadge(o.v.n), `To ${esc(o.v.d)}`, `<span class="reg">${esc(o.v.id)}</span>`))]);
   }
-  qResults.innerHTML = groups.length
-    ? groups.map(([t, items]) => `<h3 class="sv-head">${t}</h3><ul class="sv-list">${items.join('')}</ul>`).join('')
-    : /^[A-Z]{2}\d{2}[A-Z]{3}$/.test(up)
-      ? '<p class="bp-intro">That bus isn’t on the map right now.</p>'
-      : '<p class="bp-intro">Nothing found yet.</p>';
+  const html = groups.map(([t, items]) => section(t, items)).join('');
+  qResults.innerHTML =
+    html ||
+    (/^[A-Z]{2}\d{2}[A-Z]{3}$/.test(up)
+      ? '<p class="bp-intro">That bus isn’t on the map right now. Buses show here when you’ve starred their route, or when they’re in view with every bus on.</p>'
+      : '<p class="bp-intro">Nothing found yet.</p>');
 }
 qResults.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
-  setSearchOpen(false);
+  detailFrom = 'search';
+  const la = Number(b.dataset.la) || null, lo = Number(b.dataset.lo) || null;
   if (b.dataset.train) return showTrain(b.dataset.train);
   if (b.dataset.bus) {
     const o = buses.get(b.dataset.bus);
-    setTab('map');
     select('bus:' + b.dataset.bus);
-    if (o) map.setView([o.v.la, o.v.lo], Math.max(map.getZoom(), 15));
+    if (o) showOnMap(o.v.la, o.v.lo, 15);
     return;
   }
-  if (b.dataset.board) return openBoard(b.dataset.board.split('|')[0], null);
-  if (b.dataset.route) {
-    setTab('buses');
-    setBusSub('routes');
-    const bsInput = document.getElementById('busSearch');
-    bsInput.value = routeName(b.dataset.route);
-    renderBusLists();
-    return;
+  if (b.dataset.board) {
+    const [f, t] = b.dataset.board.split('|');
+    return openBoard(f, t || null);
   }
-  if (b.dataset.stop) return openStop(b.dataset.stop, Number(b.dataset.la), Number(b.dataset.lo));
+  if (b.dataset.stn) return openBoard(b.dataset.stn);
+  if (b.dataset.route) return openRoute(b.dataset.route);
+  if (b.dataset.stop) return openStop(b.dataset.stop, la, lo);
+  if (b.dataset.open) return openId(b.dataset.open, la, lo);
 });
-document.addEventListener('keydown', (e) => e.key === 'Escape' && !searchPanel.hidden && setSearchOpen(false));
 
 // Remember where the map was left
 map.on('moveend', () => {
@@ -2699,10 +2403,6 @@ const detailDrag = (window.__detailDrag = draggable(detailEl, {
   snaps: () => [Math.min(200, fullH()), Math.round(window.innerHeight * 0.5), fullH],
   onClose: () => closeDetail(true),
 }));
-const finderDrag = draggable(finderEl, {
-  snaps: () => [Math.round(window.innerHeight * 0.45), fullH],
-  onClose: () => setTab('map'),
-});
 
 // ---------- Your commute: home and work stations ----------
 function commuteStations() {
@@ -2753,10 +2453,11 @@ function finishSetup() {
   store.set('setupDone', true);
   setupEl.hidden = true;
   if (setupPick.home && setupPick.work) setTab('home');
+  else home.render();
 }
 function openSetup() {
   const c = store.get('commute', null);
-  const f = favs[0];
+  const f = favs.find((x) => x.t);
   setupPick = { home: c?.home || f?.f || null, work: c?.work || f?.t || null };
   setupEl.hidden = false;
   loadStations().then(setupStep1, setupStep1);
@@ -2813,5 +2514,12 @@ setupBody.addEventListener('click', (e) => {
 });
 // First time: set things up
 if (!store.get('setupDone', false) && !DEMO && !params.get('train')) openSetup();
+
+// Start where you left off: Now if you've set up a commute and haven't been anywhere yet
+const startTab = store.get('lastTab', null);
+if (wantTrain || params.has('demo')) markTab('map');
+else if (startTab === 'home' || startTab === 'search') setTab(startTab);
+else if (!startTab && store.get('commute', null)) setTab('home');
+else setTab('map');
 
 window.chooStarted = true;

@@ -84,23 +84,21 @@ Redeploy. The status lamp turns green and reads **Live**.
 
 Handy overrides: `?demo` forces demo mode; `?worker=https://…` tries a different worker without redeploying.
 
-## Train finder
+## Departure boards
 
-Tap **Find a train**: it picks your nearest station (or type one), you choose where you're going, and it shows the next direct trains as a departures board, with the best one (earliest arrival) marked. Save routes you use often; they're kept on that phone or computer.
+Open any station (tap it on the map, or find it in Search) to see every train leaving, with platforms. **Where to?** narrows it to direct trains to one station, with the best one (earliest arrival) marked.
 
 For live platforms and expected times, add a free National Rail key: register at https://raildata.org.uk, subscribe to the **Live Departure Board** product, copy its *Consumer key*, then on the server add `LDB_API_KEY=<key>` to `/etc/choochoo.env` and run `sudo systemctl restart choochoo`. Without a key the board uses the timetable and Choo Choo's own live data, with planned platforms.
 
 ## Getting around the app
 
-On first open, Choo Choo asks for your home and work stations, your location, and (on iPhone) to be added to the home screen. The bar at the bottom has five tabs:
+On first open, Choo Choo asks for your home and work stations, your location, and (on iPhone) to be added to the home screen. There are three tabs:
 
-- **Home:** your commute at a glance: the next good train the right way round (from where you are, or by time of day; the arrows swap it), its platform and when to leave. Getting to the station, reliability, disruption, other routes, bus stops and alerts fold away underneath.
-- **Map:** opens on where you are. The round buttons on the right are **Layers** (trains on/off, buses Off · Mine · All, colours, operators, map style), **My location** and **Replay**. Tap a station, train, bus or bus stop for its details; drag the panel up for more or flick it down to close. Disruption shows as a ⚠ badge in the header.
-- **Departures:** any station's departures board, optionally just the trains to one destination.
-- **Saved:** your commute, saved train routes, bus routes and bus stops, alerts, and **Watch my commute train** (weekday mornings and evenings, the worker picks your next good train and alerts you about it). On iPhone, notifications only work once Choo Choo is on the home screen.
-- **Ding Ding:** buses, in three parts: Routes, Stops and My buses.
+- **Now:** what should I catch? Your commute the right way round (from where you are, or by time of day; the arrows swap it) with the next good train, its platform, when to leave, **Alert me** and **Every weekday** alerts. Then the stations and bus stops nearest you with what's leaving next, then everything you've starred.
+- **Map:** opens on where you are. The top bar shows whether it's live and switches trains and buses on or off; **⋯** holds the rest (disruption, replay, every bus when zoomed in, operators, colours, map style, My buses, Commute & alerts).
+- **Search:** one box for stations, bus stops, bus routes, train headcodes and bus registrations. Empty, it lists what you've starred and opened recently.
 
-The search button in the header finds stations, bus stops, bus routes, train headcodes and bus registrations. The app reopens on the tab and map position you left.
+Everything opens in the same sheet over the map: a station's board, a bus stop's arrivals, a bus route and its buses, or a train or bus and its stops. Drag it up for more or flick it down to close. **Star** a station, a station-to-station route, a bus stop or a bus route to keep it on Now and in Search. Trains have **Alert me** (platform, delays, cancellation) and **Follow**; buses have **Follow** and **I'm on it**. On iPhone, notifications only work once Choo Choo is on the home screen.
 
 Your saved routes and alerts are kept on your phone. The server records how your saved routes' trains arrive (30 days) for the reliability figures, and keeps the last hour of train positions for replay.
 
@@ -110,7 +108,7 @@ Your saved routes and alerts are kept on your phone. The server records how your
 
 ## Ding Ding (buses)
 
-London buses, from TfL's open data. TfL doesn't publish bus GPS positions, so each bus is placed on its route between its last stop and the next, using its predicted arrival time and a speed worked out from its own predictions (so it slows down in traffic). Your saved routes show at any zoom; zoom in to see every bus in view.
+London buses, from TfL's open data. TfL doesn't publish bus GPS positions, so each bus is placed on its route between its last stop and the next, using its predicted arrival time and a speed worked out from its own predictions (so it slows down in traffic). Your starred routes show at any zoom; turn on **Every bus when zoomed in** (under ⋯) to see every bus in view.
 
 Get a free key at https://api-portal.tfl.gov.uk (subscribe to the 500 requests a minute plan, copy the primary key), then on the server add `TFL_APP_KEY=<key>` to `/etc/choochoo.env` and run `sudo systemctl restart choochoo`. The first start downloads every bus route (a few minutes); after that they're kept on disk and refreshed weekly. Live predictions are only fetched for routes someone is looking at.
 
