@@ -26,14 +26,15 @@
 
     <header class="bar" aria-label="Live map">
       <h1 class="sr-only">Choo Choo</h1>
-      <p class="status" id="status" data-state="connecting" title="Connecting">
+      <button class="status" id="status" type="button" data-state="connecting" title="Connecting" aria-describedby="statusTip">
         <span class="lamp" aria-hidden="true"></span><span id="statusText">Connecting</span>
-      </p>
+      </button>
       <button class="qt" id="qtTrains" type="button" aria-pressed="true" title="Show or hide trains"><span class="lk train" aria-hidden="true"></span><span class="qt-t">Trains</span></button>
       <button class="qt" id="qtBuses" type="button" aria-pressed="true" title="Show or hide buses"><span class="lk bus" aria-hidden="true"></span><span class="qt-t">Buses</span></button>
       <button class="dz-badge" id="disruptPill" type="button" hidden aria-label="Disruption"></button>
       <p class="count" id="count" hidden></p>
     </header>
+    <p class="status-tip" id="statusTip" role="status" hidden></p>
     <button class="fab more-btn" id="moreBtn" type="button" aria-expanded="false" aria-controls="layers" aria-label="More" title="More">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor"/></svg>
     </button>

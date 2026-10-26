@@ -3723,3 +3723,44 @@ button.chip {
   color: var(--amber);
   font-variant-numeric: tabular-nums;
 }
+
+/* The status dot is a button: tap it to hear what it means */
+.bar button.status {
+  border: 0;
+  background: none;
+  padding: 6px 4px 6px 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.status-tip {
+  position: fixed;
+  z-index: 1002;
+  top: calc(var(--safe-t) + 62px);
+  left: 10px;
+  max-width: min(340px, calc(100vw - 20px));
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--rule);
+  background: var(--slate);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  color: var(--ivory);
+}
+.status-tip[data-state='stale'],
+.status-tip[data-state='connecting'] {
+  border-color: #8a4a35;
+}
+.status-tip[hidden],
+body:not([data-tab='map']) .status-tip {
+  display: none;
+}
+@media (min-width: 900px) {
+  .status-tip {
+    top: calc(var(--safe-t) + 64px);
+    left: 12px;
+  }
+}

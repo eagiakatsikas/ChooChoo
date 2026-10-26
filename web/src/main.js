@@ -455,6 +455,26 @@ function setStatus(state, text) {
   statusEl.title = text;
 }
 
+// Tap the dot: say what it means
+const statusTip = document.getElementById('statusTip');
+let tipTimer = null;
+const STATUS_TIPS = {
+  live: 'Live: trains are shown where signalling says they are, usually within seconds.',
+  stale: 'Reconnecting to the live train feed. Until it’s back, trains are placed by the timetable and their last reports, so they may be a little out.',
+  connecting: 'Can’t reach Choo Choo’s server just now (it may be restarting). Retrying…',
+  demo: 'Demo: simulated trains, not real ones.',
+};
+statusEl.addEventListener('click', () => {
+  const replaying = document.body.classList.contains('replaying');
+  statusTip.textContent = replaying ? 'Replay: you’re looking at the past. Tap Back to live to return.' : STATUS_TIPS[statusEl.dataset.state] || statusText.textContent;
+  statusTip.dataset.state = statusEl.dataset.state;
+  statusTip.hidden = false;
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => (statusTip.hidden = true), 4500);
+  usage.track('status:' + statusEl.dataset.state);
+});
+statusTip.addEventListener('click', () => (statusTip.hidden = true));
+
 let trainsShown = 0;
 function renderCount() {
   const nb = showBuses ? buses.size : 0;
