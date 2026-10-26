@@ -24,25 +24,32 @@ export function createHome(ctx) {
     return Math.hypot(x, y);
   }
 
+  // Where you are comes from the app's one location watch (shared with the map's blue dot),
+  // so the phone is asked at most once per visit
   let locFailed = false;
   function locate(ask = false) {
-    if (!navigator.geolocation || (!ask && ctx.store.get('locDenied', false))) {
+    if (!navigator.geolocation || !ctx.startMe(ask)) {
       locFailed = true;
+      render();
+    }
+  }
+  function setHere(p, denied = false) {
+    if (!p) {
+      if (!here) {
+        locFailed = true;
+        render();
+      }
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        locFailed = false;
-        here = { la: p.coords.latitude, lo: p.coords.longitude, at: Date.now() };
-        refresh(); // the direction may have changed, so fetch that board too
-      },
-      (err) => {
-        locFailed = true;
-        if (err.code === 1) ctx.store.set('locDenied', true);
-        render();
-      },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
-    );
+    const moved = !here || Math.hypot(here.la - p.la, (here.lo - p.lo) * 0.62) > 0.0015; // ~150 m
+    const stale = here && Date.now() - here.at > 5 * 60000;
+    if (here && !moved && !stale) {
+      here.at = Date.now(); // still here: keep it current for the walking time
+      return;
+    }
+    here = { la: p.la, lo: p.lo, at: Date.now() };
+    locFailed = false;
+    if (!el.hidden) refresh(); // the direction may have changed, so fetch that board too
   }
 
   /** Your two commute stations: as set up, or else your first saved route. */
@@ -496,7 +503,6 @@ export function createHome(ctx) {
     if (b.dataset.go === 'setup') return ctx.openSetup && ctx.openSetup();
     if (b.dataset.go) return ctx.setTab(b.dataset.go);
     if (b.dataset.me) {
-      ctx.startMe();
       locFailed = false;
       render();
       return locate(true);
@@ -531,10 +537,7 @@ export function createHome(ctx) {
       } catch {}
       locate();
       refresh();
-      timer = setInterval(() => {
-        if (!here || Date.now() - here.at > 5 * 60000) locate();
-        refresh();
-      }, REFRESH_MS);
+      timer = setInterval(refresh, REFRESH_MS);
     },
     isOpen: () => !el.hidden,
     render,
@@ -544,5 +547,6 @@ export function createHome(ctx) {
       extras.push(fn);
     },
     here: () => here,
+    setHere,
   };
 }

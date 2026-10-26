@@ -1212,9 +1212,12 @@ const home = createHome({
   openRoute: (id) => openRoute(id),
   showTrain,
   setAuto: (on) => setAuto(on),
-  startMe: () => {
-    store.set('locDenied', false);
+  startMe: (ask) => {
+    if (ask) store.set('locDenied', false);
+    if (DEMO || store.get('locDenied', false)) return false;
     startMe(false);
+    if (me) setTimeout(() => home.setHere(me), 0);
+    return true;
   },
 });
 
@@ -2097,6 +2100,7 @@ function startMe(centre) {
     meWatch = navigator.geolocation.watchPosition(
       (p) => {
         me = { la: p.coords.latitude, lo: p.coords.longitude, acc: p.coords.accuracy || 0 };
+        home.setHere(me);
         locateBtn.classList.remove('busy');
         locateBtn.setAttribute('aria-pressed', 'true');
         store.set('locOn', true);
@@ -2107,6 +2111,7 @@ function startMe(centre) {
       },
       (err) => {
         locateBtn.classList.remove('busy');
+        home.setHere(null, err.code === 1);
         if (err.code === 1) {
           // Location turned off for this site: don't keep asking when the map opens
           stopMe();
@@ -2138,7 +2143,6 @@ function goToMe() {
   if (DEMO || store.get('locDenied', false) || params.get('train')) return;
   startMe(true);
 }
-if (tab === 'map') goToMe();
 // If you allowed it before, show your dot straight away (no prompt)
 if (store.get('locOn', false) && navigator.permissions) {
   navigator.permissions
@@ -2147,11 +2151,8 @@ if (store.get('locOn', false) && navigator.permissions) {
     .catch(() => {});
 }
 document.addEventListener('visibilitychange', () => {
-  // Save battery: stop watching while the app is in the background
-  if (document.visibilityState === 'hidden' && meWatch != null) {
-    navigator.geolocation.clearWatch(meWatch);
-    meWatch = null;
-  } else if (document.visibilityState === 'visible' && me) startMe(false);
+  // The phone pauses location while the app is in the background. The same watch carries
+  // on when it comes back: starting a new one can make iPhone ask for permission again.
 });
 
 // Buses you've ridden, shown wherever they are
@@ -2521,5 +2522,6 @@ if (wantTrain || params.has('demo')) markTab('map');
 else if (startTab === 'home' || startTab === 'search') setTab(startTab);
 else if (!startTab && store.get('commute', null)) setTab('home');
 else setTab('map');
+if (tab === 'map') goToMe();
 
 window.chooStarted = true;
