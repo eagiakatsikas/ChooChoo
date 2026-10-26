@@ -70,7 +70,7 @@ Fly.io works too: `cd worker && fly launch` then `fly secrets set NR_USERNAME=�
 4. Wait about 10 minutes for setup to finish. The worker's address is `https://<your-ip-with-dashes>.sslip.io`, e.g. IP `132.145.10.20` → `https://132-145-10-20.sslip.io`. Check `https://…/api/status`.
 5. Put that address in Vercel as `VITE_WORKER_URL` and redeploy.
 
-To add or change your Network Rail login later: `ssh -i <your-key> ubuntu@<ip>`, then `sudo nano /etc/choochoo.env`, then `sudo systemctl restart choochoo`. To update the worker to the latest code, run `sudo bash /opt/choochoo/app/deploy/update.sh` on the server (your settings are kept). Logs: `journalctl -u choochoo -f`.
+To add or change your Network Rail login later: `ssh -i <your-key> ubuntu@<ip>`, then `sudo nano /etc/choochoo.env`, then `sudo systemctl restart choochoo`. To update the worker to the latest code, run `sudo bash /opt/choochoo/app/deploy/update.sh` on the server (your settings are kept). Or run `sudo bash /opt/choochoo/app/deploy/enable-auto-update.sh` once, and the server checks GitHub every 10 minutes and updates itself (it only restarts the worker when worker code changed; see what it did with `journalctl -u choochoo-update -n 20`). Logs: `journalctl -u choochoo -f`.
 
 ## 4. Point the map at the worker
 
