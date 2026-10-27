@@ -1004,16 +1004,28 @@ function renderBoard(d) {
         const plat = r.plat
           ? `<span class="b-plat ${r.platLive ? '' : 'planned'}"><b>${esc(r.plat)}</b><small>${r.platLive ? 'Platform' : 'Planned'}</small></span>`
           : `<span class="b-plat planned"><b>–</b><small>Platform</small></span>`;
-        // A bell on each train: alerts can be set before it's on the map
-        const on = r.id && alerts.has(r.id);
+        // A bell on each train: alerts can be set before it's on the map, once or regularly
+        const once = r.id && alerts.has(r.id);
+        const regular = alerts.repeatFor(d.from.crs, r.std, r.dest);
+        const on = once || regular;
         const bell = r.id && !r.cancelled && !DEMO
-          ? `<button class="b-bell" type="button" data-alert="${esc(r.id)}" aria-pressed="${Boolean(on)}" aria-label="${on ? 'Stop alerts for' : 'Alert me about'} the ${esc(r.std)}">${ICON.bell}</button>`
+          ? `<button class="b-bell ${regular ? 'rep' : ''}" type="button" data-alert="${esc(r.id)}" aria-pressed="${Boolean(on)}" aria-expanded="${bellOpen === r.id}" aria-label="Alerts for the ${esc(r.std)}">${ICON.bell}</button>`
           : '<span></span>';
+        const menu =
+          bellOpen === r.id
+            ? `<div class="b-menu" data-for="${esc(r.id)}" data-std="${esc(r.std)}" data-dest="${esc(r.dest)}">
+            <span class="b-menu-t">Alerts for the ${esc(r.std)}</span>
+            <button class="act" type="button" data-mode="once" aria-pressed="${Boolean(once && !regular)}">Just this one</button>
+            <button class="act" type="button" data-mode="weekdays" aria-pressed="${regular?.days === 'weekdays'}">Every weekday</button>
+            <button class="act" type="button" data-mode="daily" aria-pressed="${regular?.days === 'daily'}">Every day</button>
+            ${on ? '<button class="act act-off" type="button" data-mode="off">Stop</button>' : ''}
+          </div>`
+            : '';
         return `<div class="b-row with-bell ${r.best ? 'best' : ''} ${r.cancelled ? 'cancelled' : ''}" role="button" tabindex="0" ${r.id ? `data-id="${esc(r.id)}"` : ''}>
           <span><span class="b-time">${esc(r.std)}</span><span class="b-exp ${cls}">${exp}</span></span>
-          <span><span class="b-dest">${esc(r.dest)}${r.best ? '<span class="b-tag">Best</span>' : ''}</span><span class="b-sub">${bits.join(' · ')}</span></span>
+          <span><span class="b-dest">${esc(r.dest)}${r.best ? '<span class="b-tag">Best</span>' : ''}</span><span class="b-sub">${bits.join(' · ')}${regular ? ` · <b class="b-reg">${regular.days === 'daily' ? 'Every day' : 'Every weekday'}</b>` : ''}</span></span>
           ${plat}${bell}
-        </div>`;
+        </div>${menu}`;
       })
       .join('');
   }
@@ -1037,23 +1049,40 @@ async function loadBoard() {
   }
 }
 
+let bellOpen = null; // the train whose alert choices are showing
 dBoard.addEventListener('click', async (e) => {
   const bell = e.target.closest('.b-bell');
   if (bell) {
-    const id = bell.dataset.alert;
-    const own = alerts.list().find((x) => x.key === id);
-    if (own) {
-      await alerts.remove(own.id);
-      toast('Alert off.');
-    } else {
-      bell.classList.add('busy');
-      const ok = await alerts.watch(id, stn.from);
-      bell.classList.remove('busy');
-      if (ok) toast(`Alert on: you’ll hear about its platform, delays and cancellation.`);
-    }
+    bellOpen = bellOpen === bell.dataset.alert ? null : bell.dataset.alert;
     if (lastBoard) renderBoard(lastBoard);
     return;
   }
+  const choice = e.target.closest('.b-menu [data-mode]');
+  if (choice) {
+    const m = choice.closest('.b-menu');
+    const id = m.dataset.for, std = m.dataset.std, dest = m.dataset.dest;
+    const mode = choice.dataset.mode;
+    const own = alerts.list().find((x) => x.key === id);
+    const regular = alerts.repeatFor(stn.from, std, dest);
+    choice.classList.add('busy');
+    usage.track('bell:' + mode);
+    if (mode === 'off') {
+      if (own) await alerts.remove(own.id);
+      if (regular) await alerts.removeRepeat(regular.id);
+      toast(`Alerts off for the ${std}.`);
+    } else if (mode === 'once') {
+      if (regular) await alerts.removeRepeat(regular.id);
+      if (own || (await alerts.watch(id, stn.from))) toast(`Alert on for today’s ${std}: you’ll hear about its platform, delays and cancellation.`);
+    } else if (await alerts.addRepeat(stn.from, std, dest, mode)) {
+      // Today's train too, if it's still to come
+      if (!own) await alerts.watch(id, stn.from);
+      toast(`Alerts on for the ${std} ${mode === 'daily' ? 'every day' : 'every weekday'}. Choo Choo starts watching it about an hour before it leaves.`, '', 6000);
+    }
+    bellOpen = null;
+    if (lastBoard) renderBoard(lastBoard);
+    return;
+  }
+  if (e.target.closest('.b-menu')) return;
   const row = e.target.closest('.b-row');
   if (!row) return;
   const id = row.dataset.id;
@@ -1230,6 +1259,7 @@ const alerts = createAlerts({
     noBack('alertsPanel');
     setSettingsOpen(true);
   },
+  stationName: (crs) => short(byCrs(crs)?.n || crs),
   showTrain: (id) => showTrain(id),
   onChange() {
     if (selectedId && !isPlace(selectedId)) renderDetailHeader();
@@ -1446,6 +1476,10 @@ const USAGE_LABELS = {
   'auto:on': 'Turned on weekday alerts',
   'auto:off': 'Turned off weekday alerts',
   'act:follow': 'Tapped Follow',
+  'bell:once': 'Set an alert for one train',
+  'bell:weekdays': 'Set a weekday train alert',
+  'bell:daily': 'Set an every-day train alert',
+  'bell:off': 'Turned a train’s alerts off',
   'pushtest:ok': 'Sent a test notification',
   'pushtest:fail': 'Test notification failed',
   'mybus:find': 'Looked for a bus they’ve been on',

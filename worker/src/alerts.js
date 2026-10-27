@@ -38,6 +38,7 @@ function save() {
     }
   }, 500);
   alertState.watches = store.watches.length;
+  alertState.repeats = (store.repeats || []).length;
 }
 
 export function startAlerts({ check = true } = {}) {
@@ -45,6 +46,7 @@ export function startAlerts({ check = true } = {}) {
     store = JSON.parse(fs.readFileSync(file(), 'utf8'));
     store.watches ||= [];
     store.autos ||= [];
+    store.repeats ||= [];
   } catch {}
   if (!store.vapid) {
     // Keys that identify this server to the phones' push services; made once and kept
@@ -55,7 +57,9 @@ export function startAlerts({ check = true } = {}) {
   webpush.setVapidDetails(process.env.PUSH_SUBJECT || 'https://choo-choo-eta.vercel.app', store.vapid.publicKey, store.vapid.privateKey);
   alertState.watches = store.watches.length;
   store.autos ||= [];
+  store.repeats ||= [];
   if (check) {
+    setInterval(() => checkRepeats().catch((err) => (alertState.lastError = err.message)), 60000);
     setInterval(() => checkAll().catch((err) => (alertState.lastError = err.message)), CHECK_MS);
     setInterval(() => checkAutos().catch((err) => (alertState.lastError = err.message)), 60000);
   }
@@ -80,7 +84,7 @@ const stationName = (tiploc) => {
   return (crs && ref.stations.get(crs)?.name) || ref.coords.get(tiploc)?.name || tiploc;
 };
 
-export function addWatch({ sub, train, crs, auto = false }) {
+export function addWatch({ sub, train, crs, auto = false, note = null }) {
   if (!sub || !sub.endpoint || !sub.keys) return { error: 'Missing push subscription' };
   const run = sched.runs.get(train);
   if (!run) return { error: 'Unknown train' };
@@ -108,7 +112,7 @@ export function addWatch({ sub, train, crs, auto = false }) {
   send(
     w,
     auto
-      ? { title: `Watching your ${label.split(' ')[0]}`, body: `Your commute train, the ${label}. We’ll tell you about its platform, delays and cancellations.` }
+      ? { title: `Watching your ${label.split(' ')[0]}`, body: `${note || 'Your commute train'}, the ${label}. We’ll tell you about its platform, delays and cancellations.` }
       : { title: 'Alert set', body: `We’ll tell you about the ${label}: platform, delays and cancellations.` },
   );
   return { id: w.id, label, key: train };
@@ -138,6 +142,7 @@ async function send(w, { title, body }) {
     // The phone has unsubscribed (or the app was removed): forget its alerts
     if (err.statusCode === 404 || err.statusCode === 410) {
       store.watches = store.watches.filter((x) => x.sub.endpoint !== w.sub.endpoint);
+      store.repeats = (store.repeats || []).filter((x) => x.sub.endpoint !== w.sub.endpoint);
       save();
     }
     return { ok: false, status: err.statusCode || null, error: String(err.body || err.message).slice(0, 200) };
@@ -308,6 +313,93 @@ export async function checkAutos(now = Date.now()) {
     if (!pick) continue;
     a.last = { [key]: pick.id }; // keep just today's
     addWatch({ sub: a.sub, train: pick.id, crs: from, auto: true });
+  }
+  save();
+}
+
+
+// ---------- Regular trains: the same train every weekday (or every day) ----------
+// You pick a train on a board and choose "Every weekday". Each day, about an hour before
+// it leaves, the worker finds that day's train (same station, time and destination) and
+// watches it, exactly like a one-off alert.
+const REPEAT_LEAD_MIN = 75; // start watching this long before it leaves
+const MAX_REPEATS = 300;
+
+/** London time now: { day: '2026-10-27', weekday: 'Tue', mins: minutes since midnight }. */
+function londonNow(now) {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const g = (t) => p.find((x) => x.type === t)?.value;
+  return { day: `${g('year')}-${g('month')}-${g('day')}`, weekday: g('weekday'), mins: Number(g('hour')) * 60 + Number(g('minute')) };
+}
+const toMins = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+export function addRepeat({ sub, crs, std, dest, days }) {
+  if (!sub || !sub.endpoint || !sub.keys) return { error: 'Missing push subscription' };
+  if (!ref.stations.has(crs)) return { error: 'Unknown station' };
+  if (!/^\d\d:\d\d$/.test(std || '')) return { error: 'Need a departure time' };
+  const r = { id: Math.random().toString(36).slice(2, 10), sub, crs, std, dest: String(dest || '').slice(0, 80), days: days === 'daily' ? 'daily' : 'weekdays', last: null, created: Date.now() };
+  // One per phone per train
+  store.repeats = (store.repeats || []).filter((x) => !(x.sub.endpoint === sub.endpoint && x.crs === crs && x.std === std && x.dest === r.dest));
+  if (store.repeats.length >= MAX_REPEATS) store.repeats.shift();
+  store.repeats.push(r);
+  save();
+  return { id: r.id, crs, std, dest: r.dest, days: r.days };
+}
+
+export function removeRepeat(id, endpoint) {
+  const before = (store.repeats || []).length;
+  store.repeats = (store.repeats || []).filter((x) => !(x.id === id && (!endpoint || x.sub.endpoint === endpoint)));
+  if (store.repeats.length !== before) save();
+  return { ok: true };
+}
+
+export function listRepeats(endpoint) {
+  return (store.repeats || []).filter((x) => x.sub.endpoint === endpoint).map(({ id, crs, std, dest, days }) => ({ id, crs, std, dest, days }));
+}
+
+/** Which regular trains are due to be picked up now. */
+export function dueRepeats(now = Date.now()) {
+  const t = londonNow(now);
+  const weekend = t.weekday === 'Sat' || t.weekday === 'Sun';
+  return (store.repeats || []).filter((r) => {
+    if (r.last === t.day) return false;
+    if (r.days === 'weekdays' && weekend) return false;
+    const until = toMins(r.std) - t.mins;
+    return until >= 0 && until <= REPEAT_LEAD_MIN;
+  });
+}
+
+export async function checkRepeats(now = Date.now()) {
+  const due = dueRepeats(now);
+  if (!due.length) return;
+  const today = londonNow(now).day;
+  const boards = new Map();
+  for (const r of due) {
+    let b = boards.get(r.crs);
+    if (!b) {
+      try {
+        b = await board(r.crs, '');
+      } catch {
+        continue;
+      }
+      boards.set(r.crs, b);
+    }
+    const rows = (b.rows || []).filter((x) => x.id && !x.cancelled);
+    // The same time and destination; failing that, the same destination within a few minutes
+    // (timetables shift a little now and then)
+    const row =
+      rows.find((x) => x.std === r.std && (!r.dest || x.dest === r.dest)) ||
+      rows.find((x) => x.dest === r.dest && Math.abs(toMins(x.std) - toMins(r.std)) <= 3);
+    const cancelled = (b.rows || []).find((x) => x.cancelled && x.std === r.std && x.dest === r.dest);
+    if (cancelled) {
+      r.last = today;
+      send({ sub: r.sub, key: `rep:${r.id}` }, { title: 'Cancelled', body: `Your regular ${r.std} to ${r.dest} is cancelled today.` });
+      continue;
+    }
+    if (!row) continue; // not on the board yet: try again next minute
+    r.last = today;
+    const note = r.days === 'daily' ? 'Your daily train' : 'Your weekday train';
+    addWatch({ sub: r.sub, train: row.id, crs: r.crs, auto: true, note });
   }
   save();
 }

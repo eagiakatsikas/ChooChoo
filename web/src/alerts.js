@@ -17,6 +17,7 @@ export function createAlerts(ctx) {
   const bodyEl = document.getElementById('alertsBody');
   const esc = ctx.esc;
   let list = ctx.store.get('alerts', []); // [{ id, label, key }]
+  let repeats = ctx.store.get('repeats', []); // regular trains: [{ id, crs, std, dest, days }]
   let note = '';
   let reg = null;
 
@@ -30,6 +31,46 @@ export function createAlerts(ctx) {
   }
 
   const saveList = () => ctx.store.set('alerts', list);
+  const saveRepeats = () => ctx.store.set('repeats', repeats);
+  const post = async (path, body) => (await fetch(`${ctx.WORKER}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+
+  /** Alert me about this train every weekday (or every day). */
+  async function addRepeat(crs, std, dest, days) {
+    const b = blocker();
+    if (b) {
+      note = b;
+      ctx.setTab('alerts');
+      render();
+      return false;
+    }
+    try {
+      const sub = await subscription(true);
+      const d = await post('/api/alerts/repeat', { sub: sub.toJSON(), crs, std, dest, days });
+      if (d.error) throw new Error(d.error);
+      repeats = [d, ...repeats.filter((r) => !(r.crs === crs && r.std === std && r.dest === dest))];
+      saveRepeats();
+      note = '';
+      render();
+      ctx.onChange();
+      return true;
+    } catch (err) {
+      note = err.message === 'denied' ? 'You said no to notifications, so alerts can’t be sent.' : `Couldn’t set that up: ${err.message}`;
+      ctx.setTab('alerts');
+      render();
+      return false;
+    }
+  }
+  async function removeRepeat(id) {
+    repeats = repeats.filter((r) => r.id !== id);
+    saveRepeats();
+    render();
+    ctx.onChange();
+    try {
+      const sub = await subscription(false);
+      await post('/api/alerts/repeat/remove', { id, endpoint: sub && sub.endpoint });
+    } catch {}
+  }
+  const repeatFor = (crs, std, dest) => repeats.find((r) => r.crs === crs && r.std === std && r.dest === dest) || null;
 
   const sameKey = (a, b) => {
     if (!a || !b) return true; // can't tell: assume fine
@@ -163,7 +204,18 @@ export function createAlerts(ctx) {
 
   /** The server drops alerts once the train has left: catch up with it. */
   async function sync() {
-    if (blocker() || !list.length) return;
+    if (blocker() || (!list.length && !repeats.length)) return;
+    try {
+      const sub = await subscription(false);
+      if (sub && repeats.length) {
+        const d = await post('/api/alerts/repeats', { endpoint: sub.endpoint });
+        if (Array.isArray(d)) {
+          repeats = d;
+          saveRepeats();
+        }
+      }
+    } catch {}
+    if (!list.length) return render();
     try {
       const sub = await subscription(false);
       if (!sub) return;
@@ -196,12 +248,23 @@ export function createAlerts(ctx) {
     bodyEl.innerHTML = `
       ${note ? `<p class="al-note">${esc(note)}</p>` : b ? `<p class="al-note">${esc(b)}</p>` : ''}
       ${list.length ? `<ul class="al-list">${itemsHtml()}</ul>` : ''}
-      <p class="bp-intro">${list.length ? '' : 'No trains being watched. '}Tap <b>Alert me</b> on a train to be told when its platform is announced or changes, if it’s late, or cancelled. Alerts stop once the train has left.</p>`;
+      <p class="bp-intro">${list.length ? '' : 'No trains being watched. '}Tap the bell on a train to be told when its platform is announced or changes, if it’s late, or cancelled. Alerts stop once the train has left.</p>
+      ${
+        repeats.length
+          ? `<h3 class="sv-head">Regular trains</h3><ul class="al-list">${repeats
+              .map(
+                (r) =>
+                  `<li><span class="al-go">${esc(r.std)} to ${esc(r.dest)}<small>${r.days === 'daily' ? 'Every day' : 'Every weekday'}${ctx.stationName ? ` · from ${esc(ctx.stationName(r.crs))}` : ''}</small></span><button class="al-rm" type="button" data-rmrep="${esc(r.id)}" aria-label="Stop the regular alert for the ${esc(r.std)}">×</button></li>`,
+              )
+              .join('')}</ul><p class="bp-intro">Choo Choo starts watching each one about an hour before it leaves.</p>`
+          : ''
+      }`;
   }
 
   bodyEl?.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.rmrep) return removeRepeat(b.dataset.rmrep);
     if (b.dataset.rm) remove(b.dataset.rm);
     else if (b.dataset.show && !ctx.showTrain(b.dataset.show)) {
       note = 'That train isn’t on the map right now.';
@@ -240,6 +303,10 @@ export function createAlerts(ctx) {
 
   return {
     test,
+    addRepeat,
+    removeRepeat,
+    repeatFor,
+    repeats: () => repeats,
     setAuto,
     autoOn: () => ctx.store.get('autoAlerts', false),
     watch,

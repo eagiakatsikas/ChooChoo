@@ -3907,3 +3907,49 @@ body:not([data-tab='map']) .status-tip {
 .b-bell.busy {
   opacity: 0.5;
 }
+
+/* Once or regular: the choices under a train's bell */
+.b-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 12px;
+  border-bottom: 1px solid var(--ivory-rule);
+  background: #e9e2cf;
+}
+.b-menu-t {
+  flex-basis: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ivory-muted);
+}
+.detail .b-menu .act-off {
+  border-color: #d9a08f;
+  color: #a33a22;
+}
+.b-menu .act.busy {
+  opacity: 0.5;
+}
+.b-bell.rep::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -18px -18px 0 0;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 2px var(--ivory);
+}
+.b-bell {
+  position: relative;
+}
+.b-reg {
+  color: #8a5a0c;
+  font-weight: 700;
+}
+.al-go small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
