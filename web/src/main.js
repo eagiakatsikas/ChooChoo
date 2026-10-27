@@ -1038,7 +1038,8 @@ dBoard.addEventListener('click', (e) => {
   const id = row.dataset.id;
   if (!id || !trains.get(id)) {
     usage.track('board:notyet');
-    row.querySelector('.b-sub')?.insertAdjacentHTML('beforeend', ' · not on the map yet');
+    // Say it once, in a message that goes away (not added to the row each tap)
+    toast(`The ${row.querySelector('.b-time')?.textContent || ''} isn’t on the map yet. Trains appear shortly before they leave.`.replace('The  ', 'This train '));
     return;
   }
   showTrain(id, stn.from);
