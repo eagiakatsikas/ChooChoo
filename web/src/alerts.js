@@ -31,19 +31,78 @@ export function createAlerts(ctx) {
 
   const saveList = () => ctx.store.set('alerts', list);
 
+  const sameKey = (a, b) => {
+    if (!a || !b) return true; // can't tell: assume fine
+    const x = new Uint8Array(a);
+    return x.length === b.length && x.every((v, i) => v === b[i]);
+  };
+
   async function subscription(ask) {
     if (!supported()) return null;
     const r = reg || (await navigator.serviceWorker.ready);
     let sub = await r.pushManager.getSubscription();
-    if (!sub && ask) {
+    if (!ask) return sub;
+    const res = await fetch(`${ctx.WORKER}/api/push/key`);
+    const { key } = await res.json();
+    if (!key) throw new Error('The server isn’t ready for alerts yet.');
+    // Signed up against an older server key: those notifications would never arrive, so sign up again
+    if (sub && !sameKey(sub.options && sub.options.applicationServerKey, keyBytes(key))) {
+      await sub.unsubscribe().catch(() => {});
+      sub = null;
+    }
+    if (!sub) {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') throw new Error('denied');
-      const res = await fetch(`${ctx.WORKER}/api/push/key`);
-      const { key } = await res.json();
-      if (!key) throw new Error('The server isn’t ready for alerts yet.');
       sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
     }
     return sub;
+  }
+
+  /** Check each step and send a test notification. Returns [{ ok, text }]. */
+  async function test() {
+    const steps = [];
+    const add = (ok, text) => steps.push({ ok, text });
+    if (ctx.DEMO) return [{ ok: false, text: 'Alerts don’t work in demo mode.' }];
+    if (isIOS) {
+      if (!standalone()) {
+        add(false, 'Not opened from the home screen. On iPhone, notifications only work there: tap Share, then Add to Home Screen, and open Choo Choo from that icon.');
+        return steps;
+      }
+      add(true, 'Opened from the home screen');
+    }
+    if (!supported()) {
+      add(false, 'This browser can’t show notifications.');
+      return steps;
+    }
+    if (Notification.permission === 'denied') {
+      add(false, isIOS ? 'Notifications are turned off for Choo Choo. Turn them on in Settings → Notifications → Choo Choo, then try again.' : 'Notifications are blocked for this site. Allow them in the browser’s site settings, then try again.');
+      return steps;
+    }
+    let sub;
+    try {
+      sub = await subscription(true);
+    } catch (err) {
+      add(false, err.message === 'denied' ? 'You said no to notifications, so they can’t be sent.' : `Couldn’t sign this phone up: ${err.message}`);
+      return steps;
+    }
+    add(true, 'Notifications allowed');
+    if (!sub) {
+      add(false, 'Couldn’t sign this phone up for notifications.');
+      return steps;
+    }
+    add(true, `Signed up with ${new URL(sub.endpoint).host}`);
+    try {
+      const res = await fetch(`${ctx.WORKER}/api/alerts/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sub: sub.toJSON() }) });
+      const d = await res.json();
+      if (d.ok) add(true, 'Server sent it. It should arrive within a few seconds: leave the app or lock your phone to see the banner.');
+      else if (res.status === 404 || d.error === 'not found') add(false, 'The server doesn’t have the test yet. It arrives with the next server update.');
+      else add(false, `The server couldn’t send it: ${[d.status, d.error].filter(Boolean).join(' ')}`);
+    } catch {
+      add(false, 'Couldn’t reach the server.');
+    }
+    // The server may have cleared this phone's alerts if its old sign-up had stopped working
+    sync();
+    return steps;
   }
 
   /** Why alerts can't work here, if they can't. */
@@ -180,6 +239,7 @@ export function createAlerts(ctx) {
   }
 
   return {
+    test,
     setAuto,
     autoOn: () => ctx.store.get('autoAlerts', false),
     watch,

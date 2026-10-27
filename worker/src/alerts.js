@@ -18,7 +18,7 @@ const FILE = 'alerts.json';
 const CHECK_MS = 30000;
 const MAX_WATCHES = 500;
 
-export const alertState = { watches: 0, sent: 0, failed: 0, lastError: null };
+export const alertState = { watches: 0, sent: 0, failed: 0, lastError: null, lastSendError: null };
 
 let store = { vapid: null, watches: [] };
 let saveTimer = null;
@@ -51,7 +51,8 @@ export function startAlerts({ check = true } = {}) {
     store.vapid = webpush.generateVAPIDKeys();
     save();
   }
-  webpush.setVapidDetails('mailto:choochoo@example.invalid', store.vapid.publicKey, store.vapid.privateKey);
+  // Push services want a real contact for the sender. Apple's is strict, so use the app's own address.
+  webpush.setVapidDetails(process.env.PUSH_SUBJECT || 'https://choo-choo-eta.vercel.app', store.vapid.publicKey, store.vapid.privateKey);
   alertState.watches = store.watches.length;
   store.autos ||= [];
   if (check) {
@@ -128,15 +129,37 @@ async function send(w, { title, body }) {
   try {
     await webpush.sendNotification(w.sub, JSON.stringify({ title, body, tag: w.key, train: w.key }), { TTL: 900, urgency: 'high' });
     alertState.sent++;
+    return { ok: true };
   } catch (err) {
     alertState.failed++;
     alertState.lastError = err.message;
+    // What the phone's push service said, to tell why (e.g. Apple: 403 BadJwtToken)
+    alertState.lastSendError = { at: Date.now(), status: err.statusCode || null, body: String(err.body || err.message).slice(0, 200), service: hostOf(w.sub.endpoint) };
     // The phone has unsubscribed (or the app was removed): forget its alerts
     if (err.statusCode === 404 || err.statusCode === 410) {
       store.watches = store.watches.filter((x) => x.sub.endpoint !== w.sub.endpoint);
       save();
     }
+    return { ok: false, status: err.statusCode || null, error: String(err.body || err.message).slice(0, 200) };
   }
+}
+
+const hostOf = (u) => {
+  try {
+    return new URL(u).host;
+  } catch {
+    return '';
+  }
+};
+
+/** Send a test notification to one phone straight away, and say how it went. */
+export async function testPush(sub) {
+  if (!sub || !sub.endpoint || !sub.keys) return { ok: false, error: 'Missing push subscription' };
+  const r = await send(
+    { sub, key: 'test' },
+    { title: 'Choo Choo test', body: 'Notifications work on this phone. You’ll get alerts like this about your trains.' },
+  );
+  return { ...r, service: hostOf(sub.endpoint) };
 }
 
 /** What we know right now about a watched train at its boarding station. */

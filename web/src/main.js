@@ -1420,6 +1420,8 @@ const USAGE_LABELS = {
   'auto:on': 'Turned on weekday alerts',
   'auto:off': 'Turned off weekday alerts',
   'act:follow': 'Tapped Follow',
+  'pushtest:ok': 'Sent a test notification',
+  'pushtest:fail': 'Test notification failed',
   'mybus:find': 'Looked for a bus they’ve been on',
   'mybus:found': '…and it was on the road',
   'mybus:notfound': '…and it wasn’t in service',
@@ -2443,7 +2445,9 @@ function renderSaved() {
       commute
         ? `<div class="ly-row sv-auto"><span><b>Watch my commute every weekday</b><small>6–10am from home and 4–8pm from work, Choo Choo picks your next good train and tells you about its platform, delays and cancellations.</small></span><button class="switch" type="button" role="switch" id="autoSwitch" aria-checked="${alerts.autoOn()}" aria-label="Watch my commute every weekday"></button></div>`
         : ''
-    }`;
+    }
+    <div class="nt-test"><div><b>Not getting notifications?</b><small>Check each step and send one to this phone now.</small></div><button class="act" type="button" id="pushTest">${ICON.bell} Send a test</button></div>
+    <ul class="nt-steps" id="pushSteps" hidden></ul>`;
 }
 document.getElementById('savedBody').addEventListener('click', async (e) => {
   const b = e.target.closest('button');
@@ -2455,6 +2459,16 @@ document.getElementById('savedBody').addEventListener('click', async (e) => {
     return;
   }
   if (b.dataset.go === 'setup') openSetup();
+  if (b.id === 'pushTest') {
+    const out = document.getElementById('pushSteps');
+    b.disabled = true;
+    out.hidden = false;
+    out.innerHTML = '<li>Checking…</li>';
+    const steps = await alerts.test();
+    usage.track(steps.every((x) => x.ok) ? 'pushtest:ok' : 'pushtest:fail');
+    out.innerHTML = steps.map((x) => `<li class="${x.ok ? 'ok' : 'bad'}">${x.ok ? ICON.check : ICON.warn}<span>${esc(x.text)}</span></li>`).join('');
+    b.disabled = false;
+  }
 });
 
 // ---------- Recently opened places and routes (for Search) ----------

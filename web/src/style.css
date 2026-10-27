@@ -3828,3 +3828,50 @@ body:not([data-tab='map']) .status-tip {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* Test notifications */
+.nt-test {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--berth);
+}
+.nt-test small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.nt-test .act[disabled] {
+  opacity: 0.5;
+}
+.nt-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.nt-steps[hidden] {
+  display: none;
+}
+.nt-steps li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 2px;
+  font-size: 13px;
+  color: var(--ivory);
+}
+.nt-steps li .ic {
+  margin-top: 2px;
+}
+.nt-steps li.ok .ic {
+  color: var(--live);
+}
+.nt-steps li.bad .ic {
+  color: #f0a080;
+}
