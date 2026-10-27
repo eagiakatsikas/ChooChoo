@@ -1004,11 +1004,16 @@ function renderBoard(d) {
         const plat = r.plat
           ? `<span class="b-plat ${r.platLive ? '' : 'planned'}"><b>${esc(r.plat)}</b><small>${r.platLive ? 'Platform' : 'Planned'}</small></span>`
           : `<span class="b-plat planned"><b>–</b><small>Platform</small></span>`;
-        return `<button class="b-row ${r.best ? 'best' : ''} ${r.cancelled ? 'cancelled' : ''}" type="button" ${r.id ? `data-id="${esc(r.id)}"` : ''}>
+        // A bell on each train: alerts can be set before it's on the map
+        const on = r.id && alerts.has(r.id);
+        const bell = r.id && !r.cancelled && !DEMO
+          ? `<button class="b-bell" type="button" data-alert="${esc(r.id)}" aria-pressed="${Boolean(on)}" aria-label="${on ? 'Stop alerts for' : 'Alert me about'} the ${esc(r.std)}">${ICON.bell}</button>`
+          : '<span></span>';
+        return `<div class="b-row with-bell ${r.best ? 'best' : ''} ${r.cancelled ? 'cancelled' : ''}" role="button" tabindex="0" ${r.id ? `data-id="${esc(r.id)}"` : ''}>
           <span><span class="b-time">${esc(r.std)}</span><span class="b-exp ${cls}">${exp}</span></span>
           <span><span class="b-dest">${esc(r.dest)}${r.best ? '<span class="b-tag">Best</span>' : ''}</span><span class="b-sub">${bits.join(' · ')}</span></span>
-          ${plat}
-        </button>`;
+          ${plat}${bell}
+        </div>`;
       })
       .join('');
   }
@@ -1032,17 +1037,36 @@ async function loadBoard() {
   }
 }
 
-dBoard.addEventListener('click', (e) => {
+dBoard.addEventListener('click', async (e) => {
+  const bell = e.target.closest('.b-bell');
+  if (bell) {
+    const id = bell.dataset.alert;
+    const own = alerts.list().find((x) => x.key === id);
+    if (own) {
+      await alerts.remove(own.id);
+      toast('Alert off.');
+    } else {
+      bell.classList.add('busy');
+      const ok = await alerts.watch(id, stn.from);
+      bell.classList.remove('busy');
+      if (ok) toast(`Alert on: you’ll hear about its platform, delays and cancellation.`);
+    }
+    if (lastBoard) renderBoard(lastBoard);
+    return;
+  }
   const row = e.target.closest('.b-row');
   if (!row) return;
   const id = row.dataset.id;
   if (!id || !trains.get(id)) {
     usage.track('board:notyet');
     // Say it once, in a message that goes away (not added to the row each tap)
-    toast(`The ${row.querySelector('.b-time')?.textContent || ''} isn’t on the map yet. Trains appear shortly before they leave.`.replace('The  ', 'This train '));
+    toast(`The ${row.querySelector('.b-time')?.textContent || ''} isn’t on the map yet. Trains appear shortly before they leave. Tap its bell to be alerted.`.replace('The  ', 'This train '));
     return;
   }
   showTrain(id, stn.from);
+});
+dBoard.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.classList.contains('b-row')) e.target.click();
 });
 
 /** Go to the map and show a train, e.g. from a departures board. */
@@ -1209,6 +1233,7 @@ const alerts = createAlerts({
   showTrain: (id) => showTrain(id),
   onChange() {
     if (selectedId && !isPlace(selectedId)) renderDetailHeader();
+    if (isStn(selectedId) && lastBoard) renderBoard(lastBoard);
     home.render();
   },
 });

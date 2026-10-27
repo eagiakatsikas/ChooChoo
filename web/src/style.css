@@ -3875,3 +3875,35 @@ body:not([data-tab='map']) .status-tip {
 .nt-steps li.bad .ic {
   color: #f0a080;
 }
+
+/* A bell on each train in a station's board */
+.b-row.with-bell {
+  cursor: pointer;
+}
+.detail .b-row.with-bell {
+  grid-template-columns: 54px 1fr 40px 36px;
+  gap: 8px;
+}
+.b-bell {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #c9bf9f;
+  background: #f6f2e6;
+  color: var(--ivory-muted);
+  cursor: pointer;
+}
+.b-bell .ic {
+  width: 16px;
+  height: 16px;
+}
+.b-bell[aria-pressed='true'] {
+  background: var(--ivory-ink);
+  border-color: var(--ivory-ink);
+  color: var(--amber);
+}
+.b-bell.busy {
+  opacity: 0.5;
+}
