@@ -464,13 +464,17 @@ const STATUS_TIPS = {
   connecting: 'Can’t reach Choo Choo’s server just now (it may be restarting). Retrying…',
   demo: 'Demo: simulated trains, not real ones.',
 };
-statusEl.addEventListener('click', () => {
-  const replaying = document.body.classList.contains('replaying');
-  statusTip.textContent = replaying ? 'Replay: you’re looking at the past. Tap Back to live to return.' : STATUS_TIPS[statusEl.dataset.state] || statusText.textContent;
-  statusTip.dataset.state = statusEl.dataset.state;
+/** A short message under the top bar that goes away by itself. ms: 0 to keep it up. */
+function toast(text, state = '', ms = 4500) {
+  statusTip.textContent = text;
+  statusTip.dataset.state = state;
   statusTip.hidden = false;
   clearTimeout(tipTimer);
-  tipTimer = setTimeout(() => (statusTip.hidden = true), 4500);
+  if (ms) tipTimer = setTimeout(() => (statusTip.hidden = true), ms);
+}
+statusEl.addEventListener('click', () => {
+  const replaying = document.body.classList.contains('replaying');
+  toast(replaying ? 'Replay: you’re looking at the past. Tap Back to live to return.' : STATUS_TIPS[statusEl.dataset.state] || statusText.textContent, statusEl.dataset.state);
   usage.track('status:' + statusEl.dataset.state);
 });
 statusTip.addEventListener('click', () => (statusTip.hidden = true));
@@ -584,6 +588,7 @@ const dActs = document.getElementById('dActs');
 const dBoard = document.getElementById('dBoard');
 const dPick = document.getElementById('dPick');
 let peekRoute = null; // a bus route you're looking at, shown live even if you haven't starred it
+let peekReg = null; // a bus you've ridden that you asked to see (My buses), kept on the map while it's open
 let detailTimer = null;
 let scrolledFor = null;
 let anchoredStop = '';
@@ -757,8 +762,8 @@ function closeDetail(byYou = false) {
   const back = byYou === true && detailFrom && window.matchMedia('(max-width: 899px)').matches ? detailFrom : null;
   detailFrom = null;
   selectedId = null;
-  if (peekRoute) {
-    peekRoute = null;
+  if (peekRoute || peekReg) {
+    peekRoute = peekReg = null;
     pollBuses();
   }
   setFollow(null);
@@ -1415,6 +1420,9 @@ const USAGE_LABELS = {
   'auto:on': 'Turned on weekday alerts',
   'auto:off': 'Turned off weekday alerts',
   'act:follow': 'Tapped Follow',
+  'mybus:find': 'Looked for a bus they’ve been on',
+  'mybus:found': '…and it was on the road',
+  'mybus:notfound': '…and it wasn’t in service',
   'act:to': 'Opened Where to? on a board',
   'act:clearto': 'Cleared a board’s destination',
   'more:disrupt': 'Opened Disruption',
@@ -1702,10 +1710,9 @@ function busQuery() {
   const r = [...new Set([...busFavs, ...(peekRoute ? [peekRoute] : [])])];
   if (r.length) q.set('r', r.join(','));
   // Buses you've ridden, wherever they are today (most recent first)
-  if (store.get('showRidden', true)) {
-    const regs = [...new Set(store.get('rides', []).map((x) => x.reg))].slice(0, 60);
-    if (regs.length) q.set('v', regs.join(','));
-  }
+  const regs = store.get('showRidden', true) ? [...new Set(store.get('rides', []).map((x) => x.reg))].slice(0, 59) : [];
+  if (peekReg && !regs.includes(peekReg)) regs.unshift(peekReg); // the one you asked to see
+  if (regs.length) q.set('v', regs.join(','));
   if (busesOn && map.getZoom() >= BUS_ZOOM) {
     const b = map.getBounds().pad(0.15);
     q.set('b', [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => x.toFixed(4)).join(','));
@@ -2089,19 +2096,20 @@ function renderMyBuses() {
     <p class="mb-sum"><b>${rides.length}</b> ${rides.length === 1 ? 'ride' : 'rides'} on <b>${byReg.size}</b> different ${byReg.size === 1 ? 'bus' : 'buses'}${
       repeat ? ` · <b>${repeat}</b> you’ve had more than once` : ''
     }</p>
-    ${onMap.length ? `<p class="mb-near">${ICON.bus} ${onMap.map((b) => `<b>${esc(b.reg)}</b>`).join(', ')} ${onMap.length === 1 ? 'is' : 'are'} on the map right now</p>` : ''}
+    ${onMap.length ? `<p class="mb-near">${ICON.bus} ${onMap.map((b) => `<button class="mb-reg" type="button" data-reg="${esc(b.reg)}">${esc(b.reg)}</button>`).join(', ')} ${onMap.length === 1 ? 'is' : 'are'} on the road right now</p>` : ''}
+    <p class="mb-hint">Tap a bus to see where it is.</p>
     <ul class="bp-list mb-list">${top
       .slice(0, 12)
       .map(
-        (b) => `<li><span class="mb-n">${b.n}×</span><span class="reg">${busIcon(b.deck)}${esc(b.reg)}</span><span class="bp-ends">${[...b.routes]
+        (b) => `<li class="mb-go" data-reg="${esc(b.reg)}" role="button" tabindex="0"><span class="mb-n">${b.n}×</span><span class="reg">${busIcon(b.deck)}${esc(b.reg)}</span><span class="bp-ends">${[...b.routes]
           .map(([r, n]) => `${esc(r)}${n > 1 ? ` ×${n}` : ''}`)
-          .join(', ')} · last ${day(b.last)}${b.model ? `<small>${esc(b.model)}${b.deck ? ` · ${esc(b.deck.toLowerCase())}` : ''}</small>` : ''}</span></li>`,
+          .join(', ')} · last ${day(b.last)}${buses.has(b.reg) ? ' <span class="mb-live">On the road</span>' : ''}${b.model ? `<small>${esc(b.model)}${b.deck ? ` · ${esc(b.deck.toLowerCase())}` : ''}</small>` : ''}</span></li>`,
       )
       .join('')}</ul>
     <details class="mb-recent"><summary>Recent rides</summary><ul class="bp-list">${rides
       .slice(0, 20)
       .map(
-        (x, i) => `<li><span class="bp-num">${esc(x.name)}</span><span class="bp-ends">${esc(x.reg)} · ${day(x.at)} ${new Date(x.at).toTimeString().slice(0, 5)}${
+        (x, i) => `<li class="mb-go" data-reg="${esc(x.reg)}" role="button" tabindex="0"><span class="bp-num">${esc(x.name)}</span><span class="bp-ends">${esc(x.reg)}${buses.has(x.reg) ? ' <span class="mb-live">On the road</span>' : ''} · ${day(x.at)} ${new Date(x.at).toTimeString().slice(0, 5)}${
           x.dest ? ` · to ${esc(x.dest)}` : ''
         }</span><button class="al-rm" type="button" data-ride="${i}" aria-label="Remove this ride">×</button></li>`,
       )
@@ -2109,10 +2117,57 @@ function renderMyBuses() {
 }
 document.getElementById('myBuses').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ride]');
-  if (!b) return;
-  rides.splice(Number(b.dataset.ride), 1);
-  saveRides();
+  if (b) {
+    rides.splice(Number(b.dataset.ride), 1);
+    saveRides();
+    return;
+  }
+  const row = e.target.closest('[data-reg]');
+  if (row) findBus(row.dataset.reg);
 });
+document.getElementById('myBuses').addEventListener('keydown', (e) => {
+  const row = e.key === 'Enter' && e.target.closest('[data-reg]');
+  if (row) findBus(row.dataset.reg);
+});
+
+/** A bus you've ridden: show it on the map if it's out on the road, or say it isn't. */
+let finding = null;
+async function findBus(reg) {
+  usage.track('mybus:find');
+  const show = (o) => {
+    statusTip.hidden = true;
+    setBusPanelOpen(false);
+    select('bus:' + reg);
+    peekReg = reg; // after select (which clears it), so it stays on the map
+    showOnMap(o.v.la, o.v.lo, 15);
+  };
+  if (!showBuses) {
+    showBuses = true;
+    applyLayers();
+  }
+  if (buses.has(reg)) return show(buses.get(reg));
+  finding = reg;
+  toast(`Looking for ${reg}…`, '', 0);
+  // The server starts watching it when asked, so give it a few goes
+  for (let i = 0; i < 4 && finding === reg; i++) {
+    try {
+      const res = await fetch(`${WORKER}/api/buses?v=${encodeURIComponent(reg)}`);
+      const d = await res.json();
+      const b = (d.buses || []).find((x) => x.id === reg);
+      if (b) {
+        buses.set(reg, { v: b, fla: b.la, flo: b.lo, t0: now() });
+        finding = null;
+        usage.track('mybus:found');
+        return show(buses.get(reg));
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  if (finding !== reg) return;
+  finding = null;
+  usage.track('mybus:notfound');
+  toast(`${reg} isn’t in service right now. It’ll show here, and with a gold dot on the map, when it’s next out on the road.`, 'stale', 6000);
+}
 renderMyBuses();
 
 // ---------- Bus stops: tap one for what's due, save your favourites ----------

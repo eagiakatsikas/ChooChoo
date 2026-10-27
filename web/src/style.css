@@ -3795,3 +3795,36 @@ body:not([data-tab='map']) .status-tip {
 .panel .back[hidden] {
   display: none;
 }
+
+/* My buses: tap a bus to find it */
+.mb-go {
+  cursor: pointer;
+}
+.mb-go:hover {
+  background: #1a2c24;
+}
+.mb-live {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #24392f;
+  color: var(--live);
+  font-size: 11px;
+  font-weight: 700;
+}
+.mb-reg {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ivory);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.mb-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
