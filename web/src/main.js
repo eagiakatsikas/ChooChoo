@@ -40,6 +40,7 @@ const ICON = {
   rail: svg('<path d="M5 20 9 4M19 20 15 4M7 15h10M8 10h8"/>'),
   stop: svg('<circle cx="12" cy="9" r="5.5"/><path d="M12 14.5V21"/>'),
   clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+  share: svg('<path d="M12 3.5v11M7.5 8 12 3.5 16.5 8"/><path d="M6 11.5H5v8.5h14v-8.5h-1"/>'),
 };
 /** "updated 20s ago", kept ticking by the timer below. */
 function fresh(at) {
@@ -664,6 +665,7 @@ function renderDetailHeader() {
   setActs([
     !DEMO && act('alert', on ? `${ICON.bell} Alert on` : `${ICON.bell} Alert me`, on),
     act('follow', following === selectedId ? `${ICON.follow} Following` : `${ICON.follow} Follow`, following === selectedId),
+    !DEMO && act('share', `${ICON.share} Share`),
   ]);
 }
 
@@ -795,8 +797,9 @@ dActs.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b || !selectedId) return;
   const a = b.dataset.act;
-  if (['follow', 'to', 'clearto'].includes(a)) usage.track('act:' + a); // stars, alerts and rides are counted where they happen
+  if (['follow', 'to', 'clearto', 'share'].includes(a)) usage.track('act:' + a); // stars, alerts and rides are counted where they happen
   if (a === 'follow') return setFollow(following ? null : selectedId);
+  if (a === 'share') return shareThis();
   if (a === 'alert') {
     const own = alerts.list().find((x) => x.key === selectedId);
     if (own) alerts.remove(own.id);
@@ -839,6 +842,24 @@ function afterUpdate() {
   }
 }
 
+// Instant start: the trains you last saw, kept on the phone, until the live feed arrives
+const TRAINS_CACHE_MS = 10 * 60000;
+let trainsSavedAt = 0;
+function saveTrains() {
+  if (DEMO || Date.now() - trainsSavedAt < 30000) return;
+  trainsSavedAt = Date.now();
+  store.set('trainsCache', { at: Date.now(), skew, list: [...trains.values()] });
+}
+let liveYet = false;
+if (!DEMO) {
+  const tc = store.get('trainsCache', null);
+  if (tc && Date.now() - tc.at < TRAINS_CACHE_MS && Array.isArray(tc.list)) {
+    skew = tc.skew || 0;
+    for (const v of tc.list) trains.set(v.id, v);
+    setTimeout(() => !liveYet && afterUpdate(), 0);
+  }
+}
+
 if (DEMO) {
   setStatus('demo', 'Demo');
   const tick = () => replaceAll(demoSnapshot(Date.now()));
@@ -857,7 +878,10 @@ function connect() {
     document.getElementById('offline').hidden = true;
     const d = JSON.parse(e.data);
     skew = d.now - Date.now();
+    liveYet = true;
     replaceAll(d.trains);
+    trainsSavedAt = 0;
+    saveTrains();
     setStatus(d.live ? 'live' : 'stale', d.live ? 'Live' : 'Feed reconnecting');
     const secs = performance.now() / 1000;
     usage.trackOnce(`ready:${secs < 2 ? 'under2s' : secs < 5 ? '2to5s' : secs < 10 ? '5to10s' : 'over10s'}`);
@@ -872,6 +896,7 @@ function connect() {
       headings.delete(id);
     }
     afterUpdate();
+    saveTrains();
   });
   es.addEventListener('ping', (e) => {
     const d = JSON.parse(e.data);
@@ -901,12 +926,29 @@ const byCrs = (c) => stations && stations.find((s) => s.c === c);
 const short = (name) => name.replace(/^London /, '');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
 
+// Instant start: the station list is kept on the phone and refreshed in the background daily
+{
+  const sc = store.get('stationsCache', null);
+  if (sc && Array.isArray(sc.list) && sc.list.length && !DEMO) {
+    stations = sc.list;
+    if (Date.now() - sc.at > 24 * 3600000) setTimeout(() => fetchStations().catch(() => {}), 4000);
+  }
+}
+function fetchStations() {
+  return fetch(`${WORKER}/api/stations`)
+    .then((r) => r.json())
+    .then((list) => {
+      if (Array.isArray(list) && list.length) {
+        stations = list;
+        store.set('stationsCache', { at: Date.now(), list });
+      }
+      return stations;
+    });
+}
 function loadStations() {
   if (stations) return Promise.resolve(stations);
   if (!stationsLoading) {
-    stationsLoading = fetch(`${WORKER}/api/stations`)
-      .then((r) => r.json())
-      .then((list) => (stations = list))
+    stationsLoading = fetchStations()
       .catch(() => {
         stationsLoading = null;
         throw new Error('stations');
@@ -1476,6 +1518,8 @@ const USAGE_LABELS = {
   'auto:on': 'Turned on weekday alerts',
   'auto:off': 'Turned off weekday alerts',
   'act:follow': 'Tapped Follow',
+  'act:share': 'Shared a train or bus',
+  'shared:open': 'Opened a shared train',
   'bell:once': 'Set an alert for one train',
   'bell:weekdays': 'Set a weekday train alert',
   'bell:daily': 'Set an every-day train alert',
@@ -1571,14 +1615,60 @@ async function setUsageOpen(open) {
 document.getElementById('mUsage').onclick = () => openSub('usagePanel');
 document.getElementById('usageClose').onclick = () => setUsageOpen(false);
 
-// A notification was tapped while the app was closed: show that train once it's on the map
+// ---------- Share my train (or bus) ----------
+/** A link that opens Choo Choo following this train or bus live. */
+async function shareThis() {
+  const id = selectedId;
+  let text, url;
+  if (isBus(id)) {
+    const o = buses.get(id.slice(4));
+    if (!o) return;
+    url = `${location.origin}/?bus=${encodeURIComponent(o.v.id)}`;
+    text = `I’m on the ${o.v.n} bus${o.v.d ? ` to ${o.v.d}` : ''}. Follow it live on Choo Choo:`;
+  } else {
+    const v = trains.get(id);
+    if (!v) return;
+    url = `${location.origin}/?train=${encodeURIComponent(id)}&follow=1`;
+    text = `I’m on the ${v.dep} ${opName(v.toc)} train to ${v.d}. Follow it live on Choo Choo, with its stops and expected times:`;
+  }
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'Follow my train', text, url });
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // you closed the share sheet
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    toast('Link copied. Paste it into a message to share it.');
+  } catch {
+    toast(url, '', 10000);
+  }
+}
+
+// Opened from a shared link or a notification: show that train (or bus) once it's on the map
 const wantTrain = params.get('train');
+const wantBus = params.get('bus');
 if (wantTrain) {
   const t0 = Date.now();
+  const follow = params.has('follow');
+  if (follow) toast('Finding the shared train…', '', 0);
   const iv = setInterval(() => {
-    if (showTrain(wantTrain) || Date.now() - t0 > 20000) clearInterval(iv);
+    if (showTrain(wantTrain)) {
+      clearInterval(iv);
+      if (follow) {
+        setFollow(wantTrain);
+        usage.track('shared:open');
+        toast('Following the shared train live. Drag the map to look around; tap Follow to pick it up again.', '', 6000);
+      }
+    } else if (Date.now() - t0 > 20000) {
+      clearInterval(iv);
+      if (follow) toast('That train isn’t running right now. It may have finished its journey, or not started yet.', 'stale', 8000);
+    }
   }, 500);
 }
+if (wantBus) setTimeout(() => findBus(wantBus.toUpperCase().replace(/[^A-Z0-9]/g, ''), true), 1500);
 
 // ---------- Disruption ----------
 /** Escape text, then turn web addresses in it (https://…, www.…, tfl.gov.uk/…) into links. */
@@ -1957,6 +2047,7 @@ function renderBusHeader() {
     act('busstar', fav ? `${ICON.starOn} Route starred` : `${ICON.star} Star route`, fav),
     act('follow', following === selectedId ? `${ICON.follow} Following` : `${ICON.follow} Follow`, following === selectedId),
     act('ride', onNow ? `${ICON.check} On board` : `${ICON.bus} I’m on it`, onNow),
+    act('share', `${ICON.share} Share`),
   ]);
   dFoot.textContent = 'Estimated position · TfL Open Data';
   dFoot.classList.add('tiny');
@@ -2018,11 +2109,14 @@ document.getElementById('busClose').onclick = () => setBusPanelOpen(false);
 async function loadBusRoutes() {
   if (busRoutes && busRoutes.length) return busRoutes;
   if (DEMO) return (busRoutes = []);
+  const c = store.get('busRoutesCache', null);
+  if (c && Array.isArray(c.list) && c.list.length && Date.now() - c.at < 24 * 3600000) return (busRoutes = c.list);
   try {
     const res = await fetch(`${WORKER}/api/busroutes`);
     busRoutes = await res.json();
+    if (Array.isArray(busRoutes) && busRoutes.length) store.set('busRoutesCache', { at: Date.now(), list: busRoutes });
   } catch {
-    busRoutes = null;
+    busRoutes = c && c.list ? c.list : null;
   }
   return busRoutes;
 }
@@ -2194,14 +2288,18 @@ document.getElementById('myBuses').addEventListener('keydown', (e) => {
 
 /** A bus you've ridden: show it on the map if it's out on the road, or say it isn't. */
 let finding = null;
-async function findBus(reg) {
-  usage.track('mybus:find');
+async function findBus(reg, shared = false) {
+  usage.track(shared ? 'shared:bus' : 'mybus:find');
   const show = (o) => {
     statusTip.hidden = true;
     setBusPanelOpen(false);
     select('bus:' + reg);
     peekReg = reg; // after select (which clears it), so it stays on the map
     showOnMap(o.v.la, o.v.lo, 15);
+    if (shared) {
+      setFollow('bus:' + reg);
+      toast('Following the shared bus live.', '', 4000);
+    }
   };
   if (!showBuses) {
     showBuses = true;
@@ -2228,7 +2326,11 @@ async function findBus(reg) {
   if (finding !== reg) return;
   finding = null;
   usage.track('mybus:notfound');
-  toast(`${reg} isn’t in service right now. It’ll show here, and with a gold dot on the map, when it’s next out on the road.`, 'stale', 6000);
+  toast(
+    shared ? 'That bus isn’t in service right now. Its journey may have finished.' : `${reg} isn’t in service right now. It’ll show here, and with a gold dot on the map, when it’s next out on the road.`,
+    'stale',
+    6000,
+  );
 }
 renderMyBuses();
 
@@ -2292,12 +2394,20 @@ async function fetchStop(id) {
   try {
     const res = await fetch(`${WORKER}/api/stop/${encodeURIComponent(id)}`);
     const d = await res.json();
-    if (!d.error) stopBoards.set(id, d);
+    if (!d.error) {
+      stopBoards.set(id, { ...d, _at: Date.now() });
+      saveStopBoards();
+    }
     return d;
   } catch {
-    return null;
+    return stopBoards.get(id) || null; // no signal: the last one we had
   }
 }
+function saveStopBoards() {
+  const keep = Object.fromEntries([...stopBoards].filter(([, d]) => Date.now() - d._at < 15 * 60000).slice(-12));
+  store.set('stopCache', keep);
+}
+for (const [id, d] of Object.entries(store.get('stopCache', {}))) if (d && Date.now() - d._at < 15 * 60000) stopBoards.set(id, d);
 
 /** The same little bus picture, as an inline icon for panels and lists. */
 function busIcon(deck) {
@@ -2457,7 +2567,7 @@ locateBtn.onclick = () => {
 };
 /** When the map opens, centre it on where you are (unless you've said no to location). */
 function goToMe() {
-  if (DEMO || store.get('locDenied', false) || params.get('train')) return;
+  if (DEMO || store.get('locDenied', false) || params.get('train') || params.get('bus')) return;
   startMe(true);
 }
 // If you allowed it before, show your dot straight away (no prompt)
@@ -2853,11 +2963,11 @@ setupBody.addEventListener('click', (e) => {
   if (s === 'done') return finishSetup();
 });
 // First time: set things up
-if (!store.get('setupDone', false) && !DEMO && !params.get('train')) openSetup();
+if (!store.get('setupDone', false) && !DEMO && !params.get('train') && !params.get('bus')) openSetup();
 
 // Start where you left off: Now if you've set up a commute and haven't been anywhere yet
 const startTab = store.get('lastTab', null);
-if (wantTrain || params.has('demo')) markTab('map');
+if (wantTrain || wantBus || params.has('demo')) markTab('map');
 else if (startTab === 'home' || startTab === 'search') setTab(startTab);
 else if (!startTab && store.get('commute', null)) setTab('home');
 else setTab('map');

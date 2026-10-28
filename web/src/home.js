@@ -12,7 +12,11 @@ export function createHome(ctx) {
   const el = document.getElementById('home');
   const body = document.getElementById('homeBody');
   let timer = null;
-  let here = null; // { la, lo, at }
+  // Where you were last (kept on this phone): lets Nearby show at once while the phone finds you
+  let here = (() => {
+    const h = ctx.store.get('lastHere', null);
+    return h && Date.now() - h.at < 30 * 60000 ? h : null;
+  })(); // { la, lo, at }
   let flipped = ctx.store.get('commuteFlip', null); // { until, flip }
   const extras = []; // render functions for later sections (alerts, disruption, reliability)
 
@@ -48,6 +52,7 @@ export function createHome(ctx) {
       return;
     }
     here = { la: p.la, lo: p.lo, at: Date.now() };
+    ctx.store.set('lastHere', here); // stays on this phone
     locFailed = false;
     if (!el.hidden) refresh(); // the direction may have changed, so fetch that board too
   }
@@ -158,7 +163,20 @@ export function createHome(ctx) {
     return d;
   }
 
-  const boards = new Map(); // "FROM|TO" → data
+  // Boards are kept on the phone for half an hour, so Now has something to show straight away
+  // (each says how old it is) and still works with poor signal
+  const BOARD_KEEP_MS = 30 * 60000;
+  const boards = new Map(
+    Object.entries(ctx.store.get('nowBoards', {})).filter(([, d]) => d && Date.now() - d._at < BOARD_KEEP_MS),
+  ); // "FROM|TO" → data
+  let boardsSaveTimer = null;
+  function saveBoards() {
+    clearTimeout(boardsSaveTimer);
+    boardsSaveTimer = setTimeout(() => {
+      const keep = [...boards].filter(([, d]) => Date.now() - d._at < BOARD_KEEP_MS).slice(-12);
+      ctx.store.set('nowBoards', Object.fromEntries(keep));
+    }, 1000);
+  }
   let busTo = null; // { crs, at, options }
   const hist = new Map(); // "FROM|TO" → reliability summary
 
@@ -220,11 +238,21 @@ export function createHome(ctx) {
     return `<div class="h-bus"><h3 class="h-head">Or take the bus</h3><ul>${rows}</ul></div>`;
   }
 
+  /** A board's trains that haven't left yet (a kept board can be a while old). */
+  function upcoming(d) {
+    if (!d) return d;
+    if (Date.now() - (d._at || 0) < 90000) return d;
+    return { ...d, rows: d.rows.filter((r) => (minsUntil(r.etdTime || r.std) ?? 0) >= -1) };
+  }
+
   async function fetchBoard(from, to) {
     try {
       const res = await fetch(`${ctx.WORKER}/api/board?from=${from}&to=${to}`);
       const d = await res.json();
-      if (!d.error) boards.set(`${from}|${to}`, { ...d, _at: Date.now() });
+      if (!d.error) {
+        boards.set(`${from}|${to}`, { ...d, _at: Date.now() });
+        saveBoards();
+      }
     } catch {}
   }
 
@@ -328,7 +356,7 @@ export function createHome(ctx) {
     if (!a) return '';
     return `<button class="place-card" type="button" data-board="${f}|${t || ''}">
       <span class="pc-head">${pin('rail')}<b>${esc(b ? `${ctx.short(a.n)} → ${ctx.short(b.n)}` : a.n)}</b><span class="pc-side">${side}</span></span>
-      <span class="chips">${trainChips(boards.get(`${f}|${t || ''}`), t)}</span></button>`;
+      <span class="chips">${trainChips(upcoming(boards.get(`${f}|${t || ''}`)), t)}</span></button>`;
   }
 
   function stopCard(id, name, side, la, lo) {
@@ -388,7 +416,7 @@ export function createHome(ctx) {
     }
     const c = commute();
     if (c) {
-      const d = boards.get(`${c.from.c}|${c.to.c}`);
+      const d = upcoming(boards.get(`${c.from.c}|${c.to.c}`));
       const walk = walkMins(c.from);
       const tr = travel(c.from);
       const autoOn = ctx.alerts() && ctx.alerts().autoOn();

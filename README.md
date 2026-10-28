@@ -100,6 +100,8 @@ On first open, Choo Choo asks for your home and work stations, your location, an
 
 Everything opens in the same sheet over the map: a station's board, a bus stop's arrivals, a bus route and its buses, or a train or bus and its stops. Drag it up for more or flick it down to close. **Star** a station, a station-to-station route, a bus stop or a bus route to keep it on Now and in Search. Trains have **Alert me** (platform, delays, cancellation) and **Follow**; buses have **Follow** and **I'm on it**. On iPhone, notifications only work once Choo Choo is on the home screen.
 
+**Share** on a train or bus sends a link that opens Choo Choo following it live. **Instant start:** the phone keeps the app, the station list, the last trains (10 minutes) and boards (half an hour), so Choo Choo opens straight away and still shows something with poor or no signal; it says how old each board is and catches up when it's back online.
+
 **Usage** (under ⋯ More) shows how many phones use Choo Choo each day and which parts get used: sheets opened, stars, alerts, searches that found nothing, how quickly trains appear, and errors. It's anonymous: each phone sends a random ID it made itself and short event names, to your own server only, and the counts are kept for 90 days.
 
 Your saved routes and alerts are kept on your phone. The server records how your saved routes' trains arrive (30 days) for the reliability figures, and keeps the last hour of train positions for replay.
