@@ -4,7 +4,16 @@ import { config } from './config.js';
 import { handleTrust, handleTd, stats } from './trains.js';
 import { applyVstp } from './schedule.js';
 
-export const feedState = { connected: false, since: null, lastError: null };
+export const feedState = { connected: false, since: null, lastError: null, restarts: 0, lastRestart: null };
+
+// Watchdog: Network Rail's feed is never quiet for long (signalling messages arrive every
+// second). If nothing arrives for a while, or the connection stays down, the session is
+// probably stuck (e.g. 'Exception getting session'), so start a fresh connection.
+const QUIET_MS = 5 * 60000;
+const GIVE_IT_MS = 5 * 60000; // let ordinary reconnects try for this long first
+let manager = null;
+let current = null;
+let troubleSince = null;
 
 const TOPICS = {
   TRAIN_MVT_ALL_TOC: (body) => handleTrust(JSON.parse(body)),
@@ -16,6 +25,38 @@ const TOPICS = {
 };
 
 export function startFeeds() {
+  connect();
+  setInterval(watchdog, 60000);
+}
+
+/** Is the feed healthy? Connected, and a message within the last few minutes. */
+export function feedHealthy(now = Date.now()) {
+  return feedState.connected && Boolean(stats.lastMsg) && now - stats.lastMsg < QUIET_MS;
+}
+
+export function watchdog(now = Date.now(), start = connect) {
+  if (feedHealthy(now) || (!stats.lastMsg && feedState.connected && now - (feedState.since || now) < QUIET_MS)) {
+    troubleSince = null;
+    return false;
+  }
+  troubleSince ||= now;
+  if (now - troubleSince < GIVE_IT_MS) return false;
+  // Stuck: throw this connection away and start again from scratch
+  feedState.restarts++;
+  feedState.lastRestart = now;
+  console.error(`[feeds] no train messages for a while (${feedState.lastError || 'no error'}): starting a fresh connection`);
+  troubleSince = now; // and give the new one time before trying again
+  const old = current;
+  current = null;
+  manager = null;
+  try {
+    if (old) old.destroy();
+  } catch {}
+  start();
+  return true;
+}
+
+function connect() {
   const clientId = config.nrClientId || `${config.nrUser}-london-trains`;
   const server = {
     host: config.stompHost,
@@ -28,31 +69,42 @@ export function startFeeds() {
       'heart-beat': '15000,15000',
     },
   };
-  const manager = new stompit.ConnectFailover([server], {
+  const m = new stompit.ConnectFailover([server], {
     initialReconnectDelay: 2000,
     maxReconnectDelay: 60000,
     useExponentialBackOff: true,
     maxReconnects: -1,
     randomize: false,
   });
+  manager = m;
 
-  manager.on('error', (err) => {
+  m.on('error', (err) => {
+    if (m !== manager) return;
     feedState.lastError = err.message;
     console.error('[feeds] connection error:', err.message);
   });
 
-  manager.connect((err, client, reconnect) => {
+  m.connect((err, client, reconnect) => {
+    // A connection the watchdog has already replaced: close it, don't keep it going
+    if (m !== manager) {
+      try {
+        client && client.disconnect();
+      } catch {}
+      return;
+    }
     if (err) {
       feedState.connected = false;
       feedState.lastError = err.message;
       console.error('[feeds] cannot connect:', err.message);
       return;
     }
+    current = client;
     feedState.connected = true;
     feedState.since = Date.now();
     console.log('[feeds] connected to', config.stompHost);
 
     client.on('error', (e) => {
+      if (m !== manager) return;
       feedState.connected = false;
       feedState.lastError = e.message;
       console.error('[feeds] client error, reconnecting:', e.message);
