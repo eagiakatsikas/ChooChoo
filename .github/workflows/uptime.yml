@@ -17,17 +17,21 @@ jobs:
           URL: https://143-47-236-90.sslip.io
         run: |
           # Three tries a couple of minutes apart, so a restart or a blip doesn't count
+          why=""
           for i in 1 2 3; do
             if s=$(curl -fsS --max-time 20 "$URL/api/status"); then
               connected=$(echo "$s" | jq -r '.feed.connected')
               mem=$(echo "$s" | jq -r '.memoryMB')
               echo "feed connected: $connected · memory: ${mem} MB"
               if [ "$connected" = "true" ]; then exit 0; fi
-              echo "Server is up but not connected to Network Rail (try $i of 3)"
+              err=$(echo "$s" | jq -r '.feed.lastError // "no error given"' | head -c 300)
+              why="The server is up but has lost its Network Rail feed. Last error: $err"
             else
-              echo "Server not answering (try $i of 3)"
+              why="The server isn't answering at all (the machine, the choochoo service, or Oracle may be down). Try: sudo systemctl restart choochoo"
             fi
+            echo "$why (try $i of 3)"
             [ $i -lt 3 ] && sleep 120
           done
-          echo "::error::Choo Choo is down or has lost its Network Rail feed: $URL/api/status"
+          # This line is what the failure email and the run's summary show
+          echo "::error title=Choo Choo needs a look::$why · $URL/api/status"
           exit 1
