@@ -1,7 +1,7 @@
 // HTTP API: snapshot, live stream (Server-Sent Events), train detail and status.
 import http from 'node:http';
 import { config } from './config.js';
-import { trains, view, detail, cleanup, stats } from './trains.js';
+import { trains, view, detail, plan, cleanup, stats } from './trains.js';
 import { sched } from './schedule.js';
 import { feedState } from './feeds.js';
 import { tracks, processQueue, getPaths, queueLength } from './tracks.js';
@@ -251,6 +251,11 @@ export function startServer() {
       cors(res);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' });
       return res.end(JSON.stringify(getPaths(keys)));
+    }
+    if (url.pathname.startsWith('/api/plan/')) {
+      // A train from the timetable, running or not (for shared links to trains that haven't left)
+      const d = plan(decodeURIComponent(url.pathname.slice('/api/plan/'.length)));
+      return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
     }
     if (url.pathname.startsWith('/api/train/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/train/'.length));

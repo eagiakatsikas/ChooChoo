@@ -374,6 +374,36 @@ export function detail(key) {
   return { id: key, hc: run.headcode, op: operatorName(run.toc), toc: run.toc, stops, path, delay: t.delay };
 }
 
+/**
+ * A train from the timetable, whether or not it's running yet: for a shared link to a train
+ * that hasn't left, so the other person can see what they're waiting for.
+ */
+export function plan(key, now = Date.now()) {
+  const run = sched.runs.get(key);
+  if (!run || !run.locs.length) return null;
+  const first = run.locs[0];
+  const last = run.locs[run.locs.length - 1];
+  const depAt = runEpoch(run, timeOut(first) ?? timeIn(first));
+  const arrAt = runEpoch(run, timeIn(last) ?? timeOut(last));
+  const t = trains.get(key);
+  return {
+    id: key,
+    hc: run.headcode,
+    op: operatorName(run.toc),
+    o: locName(first.t),
+    d: locName(last.t),
+    dep: hhmm(depAt),
+    depAt,
+    arrAt,
+    running: Boolean(t),
+    cancelled: cancelledKeys.has(key),
+    done: (t && t.state === 'done') || now > arrAt + 60 * 60000,
+    stops: run.locs
+      .filter((l, i) => l.pub || i === 0 || i === run.locs.length - 1)
+      .map((l, i) => ({ n: locName(l.t), s: hhmm(runEpoch(run, i === 0 ? timeOut(l) ?? timeIn(l) : timeIn(l) ?? timeOut(l))) })),
+  };
+}
+
 export function _resetForTest() {
   trains.clear();
   trainIdToKey.clear();

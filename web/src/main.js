@@ -1056,7 +1056,9 @@ function renderBoard(d) {
         const menu =
           bellOpen === r.id
             ? `<div class="b-menu" data-for="${esc(r.id)}" data-std="${esc(r.std)}" data-dest="${esc(r.dest)}">
-            <span class="b-menu-t">Alerts for the ${esc(r.std)}</span>
+            <span class="b-menu-t">The ${esc(r.std)} to ${esc(r.dest)}${trains.get(r.id) ? '' : ' · not on the map yet: it appears shortly before it leaves'}</span>
+            <button class="act" type="button" data-mode="share">${ICON.share} Share</button>
+            <span class="b-menu-t">Alerts</span>
             <button class="act" type="button" data-mode="once" aria-pressed="${Boolean(once && !regular)}">Just this one</button>
             <button class="act" type="button" data-mode="weekdays" aria-pressed="${regular?.days === 'weekdays'}">Every weekday</button>
             <button class="act" type="button" data-mode="daily" aria-pressed="${regular?.days === 'daily'}">Every day</button>
@@ -1091,12 +1093,18 @@ async function loadBoard() {
   }
 }
 
-let bellOpen = null; // the train whose alert choices are showing
+let bellOpen = null; // the train whose choices (alerts, share) are showing
+/** Scroll a train's choices into view (they open under the row, often below the fold). */
+function revealMenu() {
+  const m = dBoard.querySelector('.b-menu');
+  if (m) requestAnimationFrame(() => m.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+}
 dBoard.addEventListener('click', async (e) => {
   const bell = e.target.closest('.b-bell');
   if (bell) {
     bellOpen = bellOpen === bell.dataset.alert ? null : bell.dataset.alert;
     if (lastBoard) renderBoard(lastBoard);
+    revealMenu();
     return;
   }
   const choice = e.target.closest('.b-menu [data-mode]');
@@ -1104,6 +1112,10 @@ dBoard.addEventListener('click', async (e) => {
     const m = choice.closest('.b-menu');
     const id = m.dataset.for, std = m.dataset.std, dest = m.dataset.dest;
     const mode = choice.dataset.mode;
+    if (mode === 'share') {
+      usage.track('act:share');
+      return shareTrain(id, { std, dest, from: byCrs(stn.from)?.n || stn.from });
+    }
     const own = alerts.list().find((x) => x.key === id);
     const regular = alerts.repeatFor(stn.from, std, dest);
     choice.classList.add('busy');
@@ -1130,8 +1142,11 @@ dBoard.addEventListener('click', async (e) => {
   const id = row.dataset.id;
   if (!id || !trains.get(id)) {
     usage.track('board:notyet');
-    // Say it once, in a message that goes away (not added to the row each tap)
-    toast(`The ${row.querySelector('.b-time')?.textContent || ''} isn’t on the map yet. Trains appear shortly before they leave. Tap its bell to be alerted.`.replace('The  ', 'This train '));
+    if (!id || DEMO) return toast('This train isn’t on the map yet. Trains appear shortly before they leave.');
+    // Not running yet: show what you can do with it (alerts, share)
+    bellOpen = bellOpen === id ? null : id;
+    if (lastBoard) renderBoard(lastBoard);
+    revealMenu();
     return;
   }
   showTrain(id, stn.from);
@@ -1520,6 +1535,7 @@ const USAGE_LABELS = {
   'act:follow': 'Tapped Follow',
   'act:share': 'Shared a train or bus',
   'shared:open': 'Opened a shared train',
+  'shared:waiting': 'Waited for a shared train to set off',
   'bell:once': 'Set an alert for one train',
   'bell:weekdays': 'Set a weekday train alert',
   'bell:daily': 'Set an every-day train alert',
@@ -1616,6 +1632,34 @@ document.getElementById('mUsage').onclick = () => openSub('usagePanel');
 document.getElementById('usageClose').onclick = () => setUsageOpen(false);
 
 // ---------- Share my train (or bus) ----------
+/** Hand a link to the phone's share sheet (or copy it). */
+async function shareLink(text, url, title = 'Follow my train') {
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url });
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // you closed the share sheet
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    toast('Link copied. Paste it into a message to share it.');
+  } catch {
+    toast(url, '', 10000);
+  }
+}
+
+/** Share a train from a board, running or not yet: the link waits for it to appear. */
+function shareTrain(id, { std, dest, from }) {
+  const url = `${location.origin}/?train=${encodeURIComponent(id)}&follow=1`;
+  const running = trains.get(id);
+  const text = running
+    ? `I’m on the ${std} from ${short(from)} to ${dest}. Follow it live on Choo Choo:`
+    : `I’m getting the ${std} from ${short(from)} to ${dest}. Follow it live on Choo Choo once it sets off:`;
+  return shareLink(text, url);
+}
+
 /** A link that opens Choo Choo following this train or bus live. */
 async function shareThis() {
   const id = selectedId;
@@ -1631,42 +1675,65 @@ async function shareThis() {
     url = `${location.origin}/?train=${encodeURIComponent(id)}&follow=1`;
     text = `I’m on the ${v.dep} ${opName(v.toc)} train to ${v.d}. Follow it live on Choo Choo, with its stops and expected times:`;
   }
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: 'Follow my train', text, url });
-      return;
-    }
-  } catch (err) {
-    if (err && err.name === 'AbortError') return; // you closed the share sheet
-  }
-  try {
-    await navigator.clipboard.writeText(`${text} ${url}`);
-    toast('Link copied. Paste it into a message to share it.');
-  } catch {
-    toast(url, '', 10000);
-  }
+  return shareLink(text, url);
 }
 
 // Opened from a shared link or a notification: show that train (or bus) once it's on the map
 const wantTrain = params.get('train');
 const wantBus = params.get('bus');
-if (wantTrain) {
+if (wantTrain) waitForTrain(wantTrain, params.has('follow'));
+
+/**
+ * Show a train from a link once it's on the map. A shared train that hasn't set off yet is
+ * waited for (the timetable says when), then followed as soon as it appears.
+ */
+function waitForTrain(id, follow) {
   const t0 = Date.now();
-  const follow = params.has('follow');
+  let info = null; // the timetable's view of it, once asked
+  let asked = false;
   if (follow) toast('Finding the shared train…', '', 0);
-  const iv = setInterval(() => {
-    if (showTrain(wantTrain)) {
-      clearInterval(iv);
-      if (follow) {
-        setFollow(wantTrain);
-        usage.track('shared:open');
-        toast('Following the shared train live. Drag the map to look around; tap Follow to pick it up again.', '', 6000);
-      }
-    } else if (Date.now() - t0 > 20000) {
-      clearInterval(iv);
-      if (follow) toast('That train isn’t running right now. It may have finished its journey, or not started yet.', 'stale', 8000);
+  const found = () => {
+    if (!showTrain(id)) return false;
+    if (follow) {
+      setFollow(id);
+      usage.track('shared:open');
+      toast(
+        info && !info.running ? `The ${info.dep} is on its way. Following it live.` : 'Following the shared train live. Drag the map to look around; tap Follow to pick it up again.',
+        '',
+        6000,
+      );
     }
-  }, 500);
+    return true;
+  };
+  const tick = async () => {
+    if (found()) return;
+    const waited = Date.now() - t0;
+    if (!follow) return waited < 20000 && setTimeout(tick, 500);
+    // Not on the map after a few seconds: ask the timetable about it
+    if (!asked && waited > 3000) {
+      asked = true;
+      try {
+        const res = await fetch(`${WORKER}/api/plan/${encodeURIComponent(id)}`);
+        info = res.ok ? await res.json() : null;
+      } catch {}
+      if (info && info.cancelled) return toast(`The ${info.dep} from ${short(info.o)} to ${info.d} has been cancelled.`, 'stale', 0);
+      if (info && info.done) return toast(`The ${info.dep} from ${short(info.o)} to ${info.d} has finished its journey.`, 'stale', 8000);
+      if (info) {
+        usage.track('shared:waiting');
+        const st = stations && stations.find((x) => x.n === info.o);
+        if (st) showOnMap(st.la, st.lo, 13);
+        toast(`Waiting for the ${info.dep} from ${short(info.o)} to ${info.d}. It appears on the map shortly before it leaves; keep Choo Choo open and it’ll follow it from there.`, '', 0);
+      }
+    }
+    if (info) {
+      // Keep looking until a while after it was due to arrive
+      if (Date.now() < info.arrAt + 60 * 60000) return setTimeout(tick, 3000);
+      return toast(`The ${info.dep} didn’t appear on the map. It may have been cancelled.`, 'stale', 0);
+    }
+    if (waited > 20000) return toast('That train isn’t running right now. It may have finished its journey, or not started yet.', 'stale', 8000);
+    setTimeout(tick, 500);
+  };
+  setTimeout(tick, 500);
 }
 if (wantBus) setTimeout(() => findBus(wantBus.toUpperCase().replace(/[^A-Z0-9]/g, ''), true), 1500);
 
